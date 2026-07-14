@@ -159,6 +159,20 @@ pub fn set_co_signer(env: &Env, new_co_signer: &Address) {
     if new_co_signer == &oracle {
         panic!("SAFU: coSigner cannot equal oracle");
     }
+    // Found 2026-07-14 via a full re-read of V8's setCoSigner (line 935):
+    // it checks `newCoSigner != owner()` too, not just != oracle. Combined
+    // with transferOwnership's `newOwner != coSigner` check (already
+    // matched below) and initialize's constructor check, V8 blocks
+    // coSigner == admin from EVERY direction — it is a genuinely
+    // unreachable state, not "allowed after construction" as an earlier
+    // draft here assumed (that assumption was never verified against
+    // source until this pass; the override flow's degenerate-case
+    // handling below is V8's own defensive/dead code for a state that
+    // provably cannot occur, kept for exact parity, not because it's
+    // reachable).
+    if new_co_signer == &admin {
+        panic!("SAFU: coSigner cannot equal admin");
+    }
     storage::set_co_signer(env, new_co_signer);
     storage::bump_instance_ttl(env);
 }

@@ -227,3 +227,76 @@ fn forfeited_stake_still_banks_points_earned_before_the_claim() {
     let expected = (base as i128) * MID_STAKE / MAX_STAKE;
     assert_eq!(s.client.get_points_balance(&staker), expected);
 }
+
+#[test]
+fn get_points_balance_is_live_computed_while_still_staked() {
+    // Regression test for a real gap found 2026-07-14: V8's pointsOf is a
+    // COMPUTED view for an active staker, not a storage read — the
+    // original get_points_balance always returned the (empty, until
+    // withdrawal) banked value, which was wrong for anyone still staked.
+    let env = new_env();
+    let s = setup(&env);
+    let staker = new_funded_address(&env, &s, MID_STAKE);
+    let ben = Address::generate(&env);
+    s.client.stake(&staker, &MID_STAKE, &ben);
+
+    advance_days(&env, 30);
+    // Still staked — no withdraw call. Banked storage is empty at this
+    // point; the view must compute points live instead of returning 0.
+    let expected = 3_000i128 * MID_STAKE / MAX_STAKE;
+    assert_eq!(s.client.get_points_balance(&staker), expected);
+}
+
+#[test]
+fn is_eligible_true_for_active_unsuspended_stake() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    assert!(s.client.is_eligible(&staker));
+}
+
+#[test]
+fn is_eligible_false_for_nonexistent_stake() {
+    let env = new_env();
+    let s = setup(&env);
+    let random = Address::generate(&env);
+    assert!(!s.client.is_eligible(&random));
+}
+
+#[test]
+fn is_eligible_false_after_withdraw() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, ben) = staked_wallet(&env, &s);
+    s.client.withdraw(&staker, &ben);
+    assert!(!s.client.is_eligible(&staker));
+}
+
+#[test]
+fn is_eligible_false_while_suspended() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    s.client.suspend_stake(&staker);
+    assert!(!s.client.is_eligible(&staker));
+}
+
+#[test]
+fn is_claim_eligible_false_before_gate_true_after() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    assert!(!s.client.is_claim_eligible(&staker));
+    advance_days(&env, 90);
+    assert!(s.client.is_claim_eligible(&staker));
+}
+
+#[test]
+fn is_claim_eligible_false_while_suspended_even_after_gate() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    s.client.suspend_stake(&staker);
+    assert!(!s.client.is_claim_eligible(&staker));
+}

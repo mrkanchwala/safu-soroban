@@ -256,21 +256,21 @@ fn override_on_completed_claim_panics() {
 }
 
 #[test]
-fn degenerate_case_cosigner_equals_admin_single_approval_executes() {
+#[should_panic(expected = "SAFU: coSigner cannot equal admin")]
+fn cosigner_cannot_be_set_equal_to_admin() {
+    // Corrected 2026-07-14 — a full re-read of V8's setCoSigner found it
+    // DOES check `newCoSigner != owner()` (this test previously assumed
+    // the opposite and asserted the degenerate case was reachable, which
+    // was never actually verified against source). Combined with
+    // transferOwnership's `newOwner != coSigner` check and initialize's
+    // constructor check, coSigner == admin is unreachable in V8 from
+    // every direction — matched exactly here. The `|| co_signer == admin`
+    // branch in claim.rs's override-readiness check is V8's own
+    // defensive/dead code for a state that provably can't occur, kept
+    // for exact parity rather than removed.
     let env = new_env();
     let s = setup(&env);
-    // set_co_signer only checks against oracle, not admin (see claim.rs
-    // module doc + smartcontract-soroban.md §5b — a deliberate asymmetry
-    // matching V8, not a bug) — this is the only way to legally reach
-    // coSigner == admin at runtime, since initialize() blocks it upfront.
     s.client.set_co_signer(&s.admin);
-    let (staker, _ben) = staked_wallet(&env, &s);
-    let hash = tx_hash(&env, 1);
-    s.client
-        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
-    let claim_id = compute_test_claim_id(&env, &staker, &hash);
-    let claim = s.client.get_claim(&claim_id).unwrap();
-    assert_eq!(claim.status, ClaimStatus::Active);
 }
 
 // -----------------------------------------------------------------------

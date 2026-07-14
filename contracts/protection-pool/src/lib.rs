@@ -144,10 +144,15 @@ impl ProtectionPool {
     }
 
     // -- views --
-    // V8 parity gap closed 2026-07-14: V8 exposes stakeOf/isEligible/
-    // pointsOf/isClaimEligible as public views; the original build passes
-    // never ported any read functions at all. Thin wrappers over storage
-    // functions that already existed — no new logic.
+    // V8 parity gap closed 2026-07-14, corrected same day: the original
+    // "closed" pass only ported raw storage getters (stakeOf-equivalent),
+    // missing that V8's isEligible/pointsOf/isClaimEligible are COMPUTED
+    // views, not storage reads — found via the same full-source-read that
+    // caught the set_co_signer gap. pointsOf in particular returns LIVE
+    // computed points for a still-active staker, not the banked balance
+    // (which is only meaningful post-withdrawal) — get_points_balance
+    // below was returning the wrong number for anyone still staked until
+    // this fix.
 
     pub fn get_stake(env: Env, wallet: Address) -> Option<StakeRecord> {
         storage::get_stake(&env, &wallet)
@@ -157,8 +162,39 @@ impl ProtectionPool {
         storage::get_claim(&env, &claim_id)
     }
 
+    /// V8 `pointsOf`: live-computed if still staked and not withdrawn,
+    /// else the banked balance. NOT a raw storage read.
     pub fn get_points_balance(env: Env, wallet: Address) -> i128 {
+        if let Some(record) = storage::get_stake(&env, &wallet) {
+            if record.amount > 0 && !record.withdrawn {
+                return stake::compute_points_for_record(&env, &record);
+            }
+        }
         storage::get_points_balance(&env, &wallet)
+    }
+
+    /// V8 `isEligible`: has an active, non-withdrawn, non-suspended
+    /// stake. Does NOT check the time gate — see is_claim_eligible.
+    pub fn is_eligible(env: Env, wallet: Address) -> bool {
+        match storage::get_stake(&env, &wallet) {
+            Some(r) => r.amount > 0 && !r.withdrawn && !r.suspended,
+            None => false,
+        }
+    }
+
+    /// V8 `isClaimEligible`: is_eligible AND the 90-day time gate has
+    /// passed.
+    pub fn is_claim_eligible(env: Env, wallet: Address) -> bool {
+        match storage::get_stake(&env, &wallet) {
+            Some(r) => {
+                r.amount > 0
+                    && !r.withdrawn
+                    && !r.suspended
+                    && env.ledger().sequence().saturating_sub(r.staked_at_ledger)
+                        >= crate::types::TIME_GATE_LEDGERS
+            }
+            None => false,
+        }
     }
 
     pub fn get_total_staked(env: Env) -> i128 {
