@@ -9,7 +9,7 @@
 //! the configurable pool cap (types.rs MIN_STAKE_BPS/MAX_STAKE_BPS), not
 //! fixed amounts — portable across future EVM/Solana/BNB relaunches with
 //! different pool sizes. Tranche 1 deploy default: 600,000 XLM pool cap
-//! (admin.rs::TRANCHE1_DEPLOY_POOL_CAP_STROOPS), approximating V8's 60 ETH.
+//! (see README.md "Deploy-time arguments"), approximating V8's 60 ETH.
 //!
 //! Beneficiary handling corrected 2026-07-14 (user flagged the first draft
 //! didn't match V8): takes the plaintext beneficiary `Address`, not a

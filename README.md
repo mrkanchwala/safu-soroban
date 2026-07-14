@@ -44,6 +44,15 @@ safu-fuzz . && docker run --rm safu-fuzz`. Verified working in that
 container 2026-07-14: 4270 runs in 61s, zero crashes, zero solvency-
 invariant violations.
 
+### Deploy-time arguments
+
+`initialize(admin, oracle, co_signer, xlm_token, pool_cap)` — `pool_cap`
+is a plain argument, never hardcoded into contract logic, and stays
+admin-adjustable afterward via `set_pool_cap` (mirrors V8's mutable
+`maxPoolSize`). The intended Tranche 1 deploy value: **600,000 XLM**
+(approximating V8's 60 ETH cap) = `6_000_000_000_000` stroops
+(1 XLM = 10,000,000 stroops).
+
 ## Contract layout
 
 | File | Role |

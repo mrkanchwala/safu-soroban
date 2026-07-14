@@ -11,15 +11,12 @@ use crate::types::StakeRecord;
 
 /// Reinitialization guard (vuln checklist V6) — `has()` check before any
 /// state is written, not just before returning early.
-/// Soroban Tranche 1 deploy default (user-confirmed 2026-07-14): 600,000
-/// XLM, approximating V8's 60 ETH pool cap. 1 XLM = 10_000_000 stroops,
-/// so 600,000 XLM = 6_000_000_000_000 stroops. This is NOT hardcoded into
-/// contract logic — `pool_cap` is an `initialize` argument and stays
-/// admin-adjustable afterward (mirrors V8's mutable `maxPoolSize`, set via
-/// a future `set_pool_cap`). Documented here as the intended deploy-time
-/// value, not enforced here.
-pub const TRANCHE1_DEPLOY_POOL_CAP_STROOPS: i128 = 6_000_000_000_000;
-
+/// The Tranche 1 deploy-time `pool_cap` value (600,000 XLM, approximating
+/// V8's 60 ETH cap) is documented in README.md, not as a dead constant
+/// here — `pool_cap` is a plain `initialize` argument, never hardcoded
+/// into contract logic, and stays admin-adjustable afterward via
+/// `set_pool_cap` (mirrors V8's mutable `maxPoolSize`). A constant that's
+/// never referenced by any code path belongs in deploy docs, not source.
 pub fn initialize(
     env: &Env,
     admin: &Address,
