@@ -301,7 +301,7 @@ fn cancel_pending_override_allows_corrected_resubmission() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: caller must be admin or coSigner")]
+#[should_panic(expected = "SAFU: caller must be admin")]
 fn cancel_pending_override_wrong_caller_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -311,6 +311,20 @@ fn cancel_pending_override_wrong_caller_panics() {
         .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
     let random = Address::generate(&env);
     s.client.cancel_pending_override(&random, &staker, &hash);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: caller must be admin")]
+fn cancel_pending_override_cosigner_cannot_cancel() {
+    // V8's cancelPendingOverride is onlyOwner — admin only. An earlier
+    // draft here wrongly allowed coSigner too, before reading V8 directly.
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    s.client.cancel_pending_override(&s.co_signer, &staker, &hash);
 }
 
 #[test]
@@ -324,8 +338,12 @@ fn cancel_pending_override_nonexistent_panics() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: override already executed")]
+#[should_panic(expected = "SAFU: no pending override")]
 fn cancel_pending_override_after_execution_panics() {
+    // Matches V8 exactly: execution DELETES the stored request (see
+    // approve_override), so a post-execution cancel attempt naturally
+    // fails with "no pending override" — the same error a never-existed
+    // request would give, not a distinct "already executed" message.
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
@@ -334,9 +352,66 @@ fn cancel_pending_override_after_execution_panics() {
         .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
     s.client
         .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
-    // Executed (Active, not Completed) — cancel must still refuse, since
-    // an executed claim is a real on-chain commitment, not a stale draft.
     s.client.cancel_pending_override(&s.admin, &staker, &hash);
+}
+
+#[test]
+fn cancel_active_claim_then_override_does_not_double_release_allocation() {
+    // Regression test for a real bug found reading V8 directly
+    // (2026-07-14): execute_override used to release total_allocated for
+    // ANY non-completed prior claim, including an already-Cancelled one
+    // — but cancel_claim already released that same reservation itself.
+    // Re-targeting a previously-cancelled wallet+tx_hash pair via
+    // override would silently double-subtract total_allocated (masked
+    // by a .max(0) clamp instead of caught). V8 only releases when
+    // prevStatus is Active or Pending, never Cancelled — matched here.
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+
+    // First cycle: normal claim, then admin cancels it (false positive).
+    let claim_id = s
+        .client
+        .submit_claim(&s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    s.client.cancel_claim(&claim_id);
+    assert_eq!(s.client.get_total_allocated(), 0); // released once by cancel_claim
+
+    // Second cycle: override re-targets the SAME wallet+tx_hash (now
+    // Cancelled). Must forfeit fresh and allocate ENTITLEMENT exactly
+    // once — not attempt to release a reservation that's already zero.
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    assert_eq!(s.client.get_total_allocated(), ENTITLEMENT);
+
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Active);
+}
+
+#[test]
+fn cancel_claim_restores_stake_without_needing_amount_field() {
+    // Regression test: activate_claim no longer zeroes StakeRecord.amount
+    // on claim-triggered forfeiture (matches V8 — only withdrawn=true is
+    // set; only voluntary withdraw() zeroes amount). cancel_claim
+    // restoring `withdrawn=false` alone (no amount write) must be
+    // sufficient for a full, correct withdrawal afterward.
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, ben) = staked_wallet(&env, &s);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    s.client.cancel_claim(&claim_id);
+    advance_days(&env, 365); // penalty lock clears
+    s.client.withdraw(&staker, &ben);
+    assert_eq!(s.client.get_total_staked(), 0);
 }
 
 /// Test-only re-derivation of the on-chain claim id (sha256 of wallet

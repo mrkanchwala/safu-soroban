@@ -17,13 +17,19 @@
 //! the oracle's attested verdict. This is what closed the "payload shape"
 //! open question the original stub left flagged.
 //!
-//! `cancel_pending_override`: V8's full function inventory (confirmed via
-//! a full source read, 2026-07-14) includes this name but its exact
-//! mechanics were not captured in the KB passes done so far — implemented
-//! here as the conservative reading (admin or coSigner resets an
-//! unexecuted override request back to unapproved). Flagged as an
-//! approximation, not a verified port — confirm against the live V8
-//! source before this ships to mainnet.
+//! `cancel_pending_override` was initially implemented as an unverified
+//! approximation, then corrected 2026-07-14 by reading V8's actual
+//! function directly (`onlyOwner`, not admin-or-coSigner as first
+//! guessed; deletes rather than resets). That same read also caught a
+//! deeper mismatch: V8 never zeroes `StakeRecord.amount` on
+//! claim-triggered forfeiture (only `withdrawn = true`) — only the
+//! VOLUNTARY `withdraw()` function zeroes it. This build had zeroed it
+//! in both paths, which forced a wrong workaround in `execute_override`
+//! (falling back to a prior claim's remembered `stake` field) and masked
+//! a real accounting bug: releasing `total_allocated` for ANY
+//! non-completed prior claim instead of only Active/PendingTime, double-
+//! releasing when overriding an already-cancelled claim_id. All fixed
+//! together — see the affected functions below for what changed and why.
 
 use soroban_sdk::{contractevent, Address, Bytes, BytesN, Env};
 use soroban_sdk::token::TokenClient;
@@ -74,6 +80,12 @@ pub struct ClaimCancelled {
 pub struct OverrideExecuted {
     #[topic]
     pub wallet: Address,
+    pub claim_id: BytesN<32>,
+}
+
+#[contractevent]
+pub struct OverrideCancelled {
+    #[topic]
     pub claim_id: BytesN<32>,
 }
 
@@ -163,7 +175,16 @@ fn activate_claim(env: &Env, stake_record: &mut StakeRecord, claim: &mut Claim) 
 
     let stake_amount = stake_record.amount;
     stake_record.withdrawn = true;
-    stake_record.amount = 0;
+    // Deliberately NOT zeroed here — verified against the live V8 source
+    // (submitClaim's forfeiture path only sets `s.withdrawn = true`,
+    // never touches `s.amount`; only the VOLUNTARY withdraw() function
+    // zeroes it). `withdrawn` alone is the forfeiture gate everywhere
+    // else in this contract (submit_claim, set_beneficiary, withdraw,
+    // emergency_exit all check it). Keeping `amount` live lets
+    // execute_override read it directly on a re-execution instead of
+    // needing a fallback to a prior claim's remembered `stake` field —
+    // an earlier version of this function zeroed it and had to work
+    // around the consequence; fixed 2026-07-14 after reading V8 directly.
 
     let total_staked = storage::get_total_staked(env);
     claim.total_staked_snapshot = total_staked;
@@ -439,7 +460,10 @@ pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) {
     // to restore, no penalty, just unblock withdrawal below.
     if claim.status == ClaimStatus::Active {
         stake_record.withdrawn = false;
-        stake_record.amount = claim.stake;
+        // No `stake_record.amount = claim.stake` here — amount was never
+        // zeroed by forfeiture (see activate_claim's doc comment), so
+        // it's already correct; V8's own cancelClaim doesn't touch it
+        // either, confirmed by reading the source directly.
         stake_record.penalty_locked_until_ledger = env.ledger().sequence() + PENALTY_LOCK_LEDGERS;
         storage::set_total_staked(env, storage::get_total_staked(env) + claim.stake);
         storage::set_total_stakers(env, storage::get_total_stakers(env) + 1);
@@ -523,19 +547,13 @@ pub fn approve_override(
 
     if ready {
         execute_override(env, &claim_id, &req);
-        // Reset so a stale approved state can't replay after execution.
-        storage::set_override(
-            env,
-            &claim_id,
-            &OverrideRequest {
-                wallet: wallet.clone(),
-                tx_hash: tx_hash.clone(),
-                entitlement,
-                tier,
-                owner_approver: None,
-                co_signer_approver: None,
-            },
-        );
+        // Deleted, not reset — matches V8's `_executeOverride`, which
+        // does `delete pendingOverrides[claimId]` unconditionally before
+        // anything else runs. This also means cancel_pending_override
+        // doesn't need a separate "already executed" check: looking up a
+        // deleted request naturally fails with "no pending override",
+        // the same error V8 gets from the same mechanism.
+        storage::remove_override(env, &claim_id);
     } else {
         storage::set_override(env, &claim_id, &req);
     }
@@ -547,22 +565,31 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
         if c.status == ClaimStatus::Completed {
             panic!("SAFU: claim already completed");
         }
-        let unstreamed = c.entitlement - c.streamed;
-        let total_allocated = storage::get_total_allocated(env);
-        storage::set_total_allocated(env, (total_allocated - unstreamed).max(0));
+        // Only release when the PRIOR claim actually held a live
+        // reservation (Active or PendingTime) — verified against V8's
+        // `_executeOverride` directly: it gates this release on
+        // `prevStatus == 1 || prevStatus == 5` specifically, not "any
+        // non-completed status." A Cancelled claim's reservation was
+        // already released by cancel_claim itself; releasing it AGAIN
+        // here (the original, unverified version of this function did)
+        // would double-subtract total_allocated for an override
+        // re-targeting a previously-cancelled wallet+tx_hash pair —
+        // silently masked by the .max(0) clamp rather than caught.
+        if c.status == ClaimStatus::Active || c.status == ClaimStatus::PendingTime {
+            let unstreamed = c.entitlement - c.streamed;
+            let total_allocated = storage::get_total_allocated(env);
+            storage::set_total_allocated(env, (total_allocated - unstreamed).max(0));
+        }
     }
 
     let mut stake_record: StakeRecord =
         storage::get_stake(env, &req.wallet).expect("SAFU: no stake");
 
-    // If a prior (now-superseded) claim already forfeited this stake, the
-    // basis for the tier cap / restoration bookkeeping is that claim's
-    // recorded stake amount, not the (now-zeroed) StakeRecord.amount.
-    let original_stake_amount = if stake_record.withdrawn {
-        existing.as_ref().map(|c| c.stake).unwrap_or(0)
-    } else {
-        stake_record.amount
-    };
+    // Reads live — amount is never zeroed by forfeiture (activate_claim's
+    // doc comment), so this needs no withdrawn-branch fallback to a prior
+    // claim's remembered `stake` field. Matches V8's own `_executeOverride`
+    // reading `stakes[wallet_].amount` directly.
+    let original_stake_amount = stake_record.amount;
     if original_stake_amount <= 0 {
         panic!("SAFU: no stake amount to base override on");
     }
@@ -628,42 +655,29 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
     .publish(env);
 }
 
-/// APPROXIMATED, not verified against source (see module doc comment) —
-/// admin or coSigner resets an unexecuted override request back to
-/// unapproved, so a wrong submission doesn't stay stuck forever pending
-/// the other party's approval of bad params.
-pub fn cancel_pending_override(
-    env: &Env,
-    caller: &Address,
-    wallet: &Address,
-    tx_hash: &BytesN<32>,
-) {
+/// Verified against the live V8 source 2026-07-14 (was previously
+/// approximated — see git history). V8's `cancelPendingOverride` is
+/// `onlyOwner` — admin ONLY, not admin-or-coSigner as an earlier draft
+/// here assumed. It also just requires the request exists and deletes
+/// it; no separate "already executed" branch exists because execution
+/// ALSO deletes the request (see approve_override), so a post-execution
+/// call here naturally fails with the same "no pending override" error
+/// as one that never existed — exactly what `storage::get_override(...)
+/// .expect(...)` below already does, without needing a Claim-status
+/// lookup at all.
+pub fn cancel_pending_override(env: &Env, caller: &Address, wallet: &Address, tx_hash: &BytesN<32>) {
     let admin = storage::get_admin(env);
-    let co_signer = storage::get_co_signer(env);
-    if caller != &admin && caller != &co_signer {
-        panic!("SAFU: caller must be admin or coSigner");
+    if caller != &admin {
+        panic!("SAFU: caller must be admin");
     }
-    caller.require_auth();
+    admin.require_auth();
 
     let claim_id = compute_claim_id(env, wallet, tx_hash);
-    let req: OverrideRequest =
-        storage::get_override(env, &claim_id).expect("SAFU: no pending override");
-
-    // NOT `req.owner_approved && req.co_signer_approved` — execute_override
-    // always resets both flags to false right after executing (replay
-    // guard), so that condition can never actually observe "already
-    // executed"; it would just silently no-op on a stale request instead
-    // of telling the caller why. Check the Claim record's real status
-    // instead — execute_override always leaves it Active or Completed.
-    if let Some(existing) = storage::get_claim(env, &claim_id) {
-        if existing.status == ClaimStatus::Active || existing.status == ClaimStatus::Completed {
-            panic!("SAFU: override already executed");
-        }
-    }
-    let _ = req; // existence already confirmed via storage::get_override above
-
-    // Fully cleared, not reset-in-place — a corrected resubmission with
-    // different entitlement/tier must be treated as genuinely fresh, not
-    // compared against these now-abandoned values.
+    storage::get_override(env, &claim_id).expect("SAFU: no pending override");
     storage::remove_override(env, &claim_id);
+
+    OverrideCancelled {
+        claim_id: claim_id.clone(),
+    }
+    .publish(env);
 }
