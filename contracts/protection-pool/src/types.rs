@@ -1,0 +1,150 @@
+//! Data model ported from `SAFUPoolV8.sol`, pool/claims mechanics only.
+//! Yield-deployment fields (wstETH/Lido: `wstethDeployed`, `totalDeployed`,
+//! `totalDeployedETH`) are deliberately excluded — Tranche 1 scope is the
+//! core pool only, no yield venue. See context/knowledge/smartcontract-soroban.md
+//! "scope boundary" note (research-ops repo) for why.
+
+use soroban_sdk::{contracttype, Address, BytesN};
+
+// -----------------------------------------------------------------------
+// Time constants — Soroban has no native "days"; ledgers close ~5s apart.
+// Mirrors DAY_IN_LEDGERS convention from the Soroban SDK reference used to
+// build this contract (context/knowledge/smartcontract-soroban.md).
+// -----------------------------------------------------------------------
+
+pub const LEDGERS_PER_DAY: u32 = 17_280;
+
+/// 90-day time gate before a stake is claim-eligible (V8: CLAIM_MIN_DAYS).
+pub const TIME_GATE_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
+/// 7-day cooldown between claim activation and first payout stream.
+pub const COOLDOWN_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
+/// 45-day linear vesting window, starting at cooldown end (V8: VESTING).
+pub const VESTING_LEDGERS: u32 = 45 * LEDGERS_PER_DAY;
+/// 365-day re-stake lock applied only on a false-positive cancel, never on
+/// a genuine paid claim (that forfeiture is permanent — do not conflate).
+pub const PENALTY_LOCK_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
+
+// -----------------------------------------------------------------------
+// Stake bounds — dynamic, as basis points of the configurable pool cap,
+// not fixed amounts. Decided 2026-07-14 (user): V8's fixed ETH bounds
+// (STAKE_MIN=0.01, STAKE_MAX=0.75, MAX_POOL_ETH=60) imply MAX = exactly
+// 1.25% of pool cap and MIN = 0.0167% of pool cap — a per-staker
+// concentration limit (max) plus a spam-resistance floor (min), not
+// arbitrary numbers. Recomputing these as basis-points-of-pool-cap
+// instead of fixed amounts makes the same design portable across chains
+// with different pool sizes (EVM/Solana/BNB relaunches) without
+// re-deriving bounds by hand each time — this is meant to be the reusable
+// base pattern, not a Soroban-only fix.
+// MAX_STAKE_BPS reproduces V8's ratio exactly (125/10_000 = 1.25%).
+// MIN_STAKE_BPS is a clean round number close to V8's actual 0.0167% —
+// at a 60 XLM-equivalent pool this is 0.012 vs V8's 0.01, a deliberate
+// approximation for a clean constant rather than reproducing a fraction.
+// Confirm with user before mainnet if exact reproduction matters.
+// -----------------------------------------------------------------------
+
+pub const MIN_STAKE_BPS: i128 = 2; // 0.02% of pool cap
+pub const MAX_STAKE_BPS: i128 = 125; // 1.25% of pool cap — matches V8 exactly
+pub const STAKE_BPS_DENOMINATOR: i128 = 10_000;
+
+// -----------------------------------------------------------------------
+// Tier / coverage
+// -----------------------------------------------------------------------
+
+/// Coverage multiplier in basis points, indexed by tier (A/B/C). Tier is
+/// assessed off-chain by the oracle at claim time — never stake-banded.
+/// TODO (Task 2/3): confirm exact tier encoding (0=A/1=B/2=C or similar)
+/// against the oracle's actual verdict payload format once that's defined.
+pub const TIER_A_COVERAGE_BPS: i128 = 15_000; // 15x
+pub const TIER_B_COVERAGE_BPS: i128 = 10_000; // 10x
+pub const TIER_C_COVERAGE_BPS: i128 = 5_000; // 5x
+pub const BPS_DENOMINATOR: i128 = 1_000;
+
+// -----------------------------------------------------------------------
+// Claim state machine — full 6 states, ported from V8's Claim.status.
+// Corrected 2026-07-14 eng review: earlier research had only captured a
+// simplified active/forfeited binary; V8's actual enum is richer and a
+// 2-state model would silently collapse real transitions.
+// -----------------------------------------------------------------------
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ClaimStatus {
+    Unused = 0,
+    Active = 1,
+    Completed = 2,
+    Cancelled = 3,
+    Reserved = 4,
+    PendingTime = 5,
+}
+
+// -----------------------------------------------------------------------
+// StakeRecord — ported from V8's StakeRecord struct, minus yield fields.
+// -----------------------------------------------------------------------
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct StakeRecord {
+    /// sha256(beneficiary) — plaintext beneficiary address is never stored.
+    /// Decided 2026-07-14: sha256 not keccak256 (Soroban-native, consistent
+    /// with the Ed25519 oracle-auth decision; no cross-chain hash-matching
+    /// requirement exists for this field).
+    pub beneficiary_hash: BytesN<32>,
+    pub amount: i128,
+    pub staked_at_ledger: u32,
+    /// Set by cancel_claim on a false-positive reversal; blocks withdraw
+    /// for PENALTY_LOCK_LEDGERS. 0 if never penalized.
+    pub penalty_locked_until_ledger: u32,
+    pub withdrawn: bool,
+    /// Admin can block payout eligibility; does NOT block principal withdrawal.
+    pub suspended: bool,
+    /// True while a claim is open against this stake; blocks withdrawal.
+    pub claim_active: bool,
+}
+
+// -----------------------------------------------------------------------
+// Claim — ported from V8's Claim struct.
+// -----------------------------------------------------------------------
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct Claim {
+    pub wallet: Address,
+    pub tx_hash: BytesN<32>,
+    /// Ledger timestamp of the hack event, validated at submit_claim.
+    pub hack_timestamp: u64,
+    /// Total approved payout.
+    pub entitlement: i128,
+    /// Already streamed to the beneficiary so far.
+    pub streamed: i128,
+    /// Stake amount captured at submit_claim — used by cancel_claim to
+    /// restore total_staked on a false-positive reversal.
+    pub stake: i128,
+    pub cooldown_ends_ledger: u32,
+    pub vesting_ends_ledger: u32,
+    /// CORRECTED 2026-07-14: fixed at claim ACTIVATION (end of cooldown),
+    /// not at submission. The daily outflow cap's anti-manipulation
+    /// guarantee depends on this timing being exact — get it wrong and a
+    /// staker withdrawing unrelated stake mid-cooldown could shrink the
+    /// cap denominator below what it was when the claim went active.
+    pub total_staked_snapshot: i128,
+    /// Assessed by the oracle at claim time, included in its signed
+    /// verdict — never re-derivable/forgeable client-side.
+    pub tier: u32,
+    pub status: ClaimStatus,
+}
+
+// -----------------------------------------------------------------------
+// OverrideRequest — 2-of-2 (oracle + coSigner) override flow.
+// -----------------------------------------------------------------------
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct OverrideRequest {
+    pub wallet: Address,
+    pub tx_hash: BytesN<32>,
+    pub entitlement: i128,
+    pub tier: u32,
+    pub owner_approved: bool,
+    pub co_signer_approved: bool,
+}

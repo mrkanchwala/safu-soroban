@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["contracts/protection-pool"]
+
+[workspace.dependencies]
+# Verified 2026-07-14 via `cargo check`: crates.io's actual latest is v27.0.0 (v22.0.0
+# placeholder resolved to a real but 5-major-version-old v22.0.11 and pulled a stale API
+# — pinning current so the code matches the SDK docs this was built against).
+soroban-sdk = "27.0.0"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true
