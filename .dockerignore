@@ -1,0 +1,4 @@
+**/target/
+**/.git/
+contracts/protection-pool/fuzz/corpus/
+contracts/protection-pool/fuzz/artifacts/

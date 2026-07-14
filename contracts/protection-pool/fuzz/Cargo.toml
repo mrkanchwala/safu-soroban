@@ -24,3 +24,10 @@ path = "fuzz_targets/fuzz_solvency.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_override"
+path = "fuzz_targets/fuzz_override.rs"
+test = false
+doc = false
+bench = false
