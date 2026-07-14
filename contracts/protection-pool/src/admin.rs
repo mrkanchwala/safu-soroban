@@ -7,6 +7,7 @@
 use soroban_sdk::{Address, Env};
 
 use crate::storage;
+use crate::types::StakeRecord;
 
 /// Reinitialization guard (vuln checklist V6) — `has()` check before any
 /// state is written, not just before returning early.
@@ -31,9 +32,14 @@ pub fn initialize(
         panic!("SAFU: already initialized");
     }
     // V8 (S4 audit checklist item): oracle != coSigner enforced at
-    // construction and at every setter.
+    // construction and at every setter. V8 constructor also requires
+    // coSigner != owner (msg.sender) — missing from the first build pass,
+    // found on full source read (2026-07-14).
     if oracle == co_signer {
         panic!("SAFU: oracle cannot equal coSigner");
+    }
+    if co_signer == admin {
+        panic!("SAFU: coSigner must differ from admin");
     }
     if pool_cap <= 0 {
         panic!("SAFU: pool cap must be positive");
@@ -48,7 +54,71 @@ pub fn initialize(
     storage::set_pool_cap(env, pool_cap);
     storage::set_total_staked(env, 0);
     storage::set_total_allocated(env, 0);
+    storage::set_total_stakers(env, 0);
+    storage::set_paused(env, false);
     storage::bump_instance_ttl(env);
+}
+
+/// V8: transferOwnership override — new admin cannot equal coSigner. No
+/// renounce equivalent is provided (V8 overrides renounceOwnership to
+/// always revert — the absence of a renounce function here achieves the
+/// same "cannot renounce" outcome by construction, not by omission).
+pub fn transfer_admin(env: &Env, new_admin: &Address) {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+
+    let co_signer = storage::get_co_signer(env);
+    if new_admin == &co_signer {
+        panic!("SAFU: new admin cannot equal coSigner");
+    }
+    storage::set_admin(env, new_admin);
+    storage::bump_instance_ttl(env);
+}
+
+/// V8: pause()/unpause() — Pausable circuit breaker, admin-only. Blocks
+/// stake/withdraw/submit_claim/claim_stream/unlock_pending_claim/
+/// approve_override while paused; emergency_exit (stake.rs) remains the
+/// pause-time exit path. Missing entirely from the first two build
+/// passes — found on full source read.
+pub fn pause(env: &Env) {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+    storage::set_paused(env, true);
+}
+
+pub fn unpause(env: &Env) {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+    storage::set_paused(env, false);
+}
+
+/// V8: suspendStake/unsuspendStake — blocks payout eligibility, does NOT
+/// block principal withdrawal (suspended stakers can still exit).
+pub fn suspend_stake(env: &Env, wallet: &Address) {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+
+    let mut record: StakeRecord = storage::get_stake(env, wallet).expect("SAFU: no stake");
+    if record.amount <= 0 {
+        panic!("SAFU: no stake");
+    }
+    if record.withdrawn {
+        panic!("SAFU: already withdrawn");
+    }
+    record.suspended = true;
+    storage::set_stake(env, wallet, &record);
+}
+
+pub fn unsuspend_stake(env: &Env, wallet: &Address) {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+
+    let mut record: StakeRecord = storage::get_stake(env, wallet).expect("SAFU: no stake");
+    if record.amount <= 0 {
+        panic!("SAFU: no stake");
+    }
+    record.suspended = false;
+    storage::set_stake(env, wallet, &record);
 }
 
 /// Mirrors V8's `setPoolSize` — admin-adjustable operational cap.

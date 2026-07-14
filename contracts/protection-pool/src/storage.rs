@@ -38,14 +38,30 @@ pub enum DataKey {
     PoolCap,
     TotalStaked,
     TotalAllocated,
+    /// Staker COUNT, separate from TotalStaked (the amount). V8: totalStakers.
+    /// Missing from the first two build passes — found on full source read.
+    TotalStakers,
+    Paused,
     DailyOutflow,
     LastOutflowDay,
+    /// Admission-side daily cap tracking (submit_claim) — separate from the
+    /// payout-side DailyOutflow/LastOutflowDay (claim_stream) above. V8 uses
+    /// three parallel instance vars (dailyEntitlementTotal/lastEntitlementDay/
+    /// dailyClaimCount) with the same day-rollover pattern, not a per-day
+    /// keyed counter — corrected here after an earlier draft built the wrong
+    /// mechanism (a temporary-storage ClaimAdmissionCount(u32) key that
+    /// tracked count only, not the entitlement sum, and didn't match V8's
+    /// reset semantics).
+    DailyEntitlementTotal,
+    LastEntitlementDay,
+    DailyClaimCount,
     // -- persistent (per-entity) --
     Stake(Address),
     ClaimRec(BytesN<32>),
     Override(BytesN<32>),
-    // -- temporary (daily counters) --
-    ClaimAdmissionCount(u32), // keyed by ledger-day
+    /// Banked points after stake exit — accumulates across all cycles. V8:
+    /// pointsBalance. Missing from the first two build passes.
+    PointsBalance(Address),
 }
 
 // -----------------------------------------------------------------------
@@ -119,6 +135,31 @@ pub fn set_total_allocated(env: &Env, value: i128) {
         .set(&DataKey::TotalAllocated, &value);
 }
 
+pub fn get_total_stakers(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TotalStakers)
+        .unwrap_or(0)
+}
+
+pub fn set_total_stakers(env: &Env, value: u32) {
+    env.storage().instance().set(&DataKey::TotalStakers, &value);
+}
+
+pub fn is_paused(env: &Env) -> bool {
+    env.storage().instance().get(&DataKey::Paused).unwrap_or(false)
+}
+
+pub fn set_paused(env: &Env, value: bool) {
+    env.storage().instance().set(&DataKey::Paused, &value);
+}
+
+pub fn require_not_paused(env: &Env) {
+    if is_paused(env) {
+        panic!("SAFU: paused");
+    }
+}
+
 /// Returns (daily_outflow, last_outflow_day), rolling over to (0, today)
 /// if the stored day doesn't match — mirrors V8's `claimStream` day-reset
 /// check. Ported exactly per the eng review finding: this is a simple
@@ -145,6 +186,46 @@ pub fn set_daily_outflow(env: &Env, current_day: u32, value: i128) {
         .instance()
         .set(&DataKey::LastOutflowDay, &current_day);
     env.storage().instance().set(&DataKey::DailyOutflow, &value);
+}
+
+/// Admission-side daily cap (submit_claim's dailyEntitlementTotal +
+/// dailyClaimCount) — same day-rollover pattern as daily_outflow above,
+/// but tracked separately since V8 keeps these as distinct counters.
+/// Returns (entitlement_total, claim_count) for `current_day`, rolled to
+/// (0, 0) if the stored day doesn't match.
+pub fn get_daily_entitlement(env: &Env, current_day: u32) -> (i128, u32) {
+    let last_day: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::LastEntitlementDay)
+        .unwrap_or(0);
+    if last_day != current_day {
+        (0, 0)
+    } else {
+        let total = env
+            .storage()
+            .instance()
+            .get(&DataKey::DailyEntitlementTotal)
+            .unwrap_or(0);
+        let count = env
+            .storage()
+            .instance()
+            .get(&DataKey::DailyClaimCount)
+            .unwrap_or(0);
+        (total, count)
+    }
+}
+
+pub fn set_daily_entitlement(env: &Env, current_day: u32, total: i128, count: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::LastEntitlementDay, &current_day);
+    env.storage()
+        .instance()
+        .set(&DataKey::DailyEntitlementTotal, &total);
+    env.storage()
+        .instance()
+        .set(&DataKey::DailyClaimCount, &count);
 }
 
 /// Bump the shared instance TTL — call at every entry point that touches
@@ -208,22 +289,20 @@ pub fn set_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
 }
 
 // -----------------------------------------------------------------------
-// Daily claim-admission counter (temporary — naturally expires)
+// Points balance (persistent) — banked at forfeiture time
 // -----------------------------------------------------------------------
 
-pub fn get_claim_admission_count(env: &Env, day: u32) -> u32 {
+pub fn get_points_balance(env: &Env, wallet: &Address) -> i128 {
     env.storage()
-        .temporary()
-        .get(&DataKey::ClaimAdmissionCount(day))
+        .persistent()
+        .get(&DataKey::PointsBalance(wallet.clone()))
         .unwrap_or(0)
 }
 
-pub fn incr_claim_admission_count(env: &Env, day: u32) {
-    let count = get_claim_admission_count(env, day) + 1;
-    let key = DataKey::ClaimAdmissionCount(day);
-    env.storage().temporary().set(&key, &count);
-    // Short TTL — this counter only matters for the current + maybe next day.
+pub fn set_points_balance(env: &Env, wallet: &Address, value: i128) {
+    let key = DataKey::PointsBalance(wallet.clone());
+    env.storage().persistent().set(&key, &value);
     env.storage()
-        .temporary()
-        .extend_ttl(&key, crate::types::LEDGERS_PER_DAY, 2 * crate::types::LEDGERS_PER_DAY);
+        .persistent()
+        .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TO);
 }

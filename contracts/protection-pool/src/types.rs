@@ -20,6 +20,10 @@ pub const TIME_GATE_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
 pub const COOLDOWN_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
 /// 45-day linear vesting window, starting at cooldown end (V8: VESTING).
 pub const VESTING_LEDGERS: u32 = 45 * LEDGERS_PER_DAY;
+/// 30-day window after a hack within which the claim must be submitted
+/// (V8: CLAIM_WINDOW) — missing from the first two research passes, found
+/// only on a full line-by-line read of the source (2026-07-14).
+pub const CLAIM_WINDOW_LEDGERS: u32 = 30 * LEDGERS_PER_DAY;
 /// 365-day re-stake lock applied only on a false-positive cancel, never on
 /// a genuine paid claim (that forfeiture is permanent — do not conflate).
 pub const PENALTY_LOCK_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
@@ -50,14 +54,18 @@ pub const STAKE_BPS_DENOMINATOR: i128 = 10_000;
 // Tier / coverage
 // -----------------------------------------------------------------------
 
-/// Coverage multiplier in basis points, indexed by tier (A/B/C). Tier is
-/// assessed off-chain by the oracle at claim time — never stake-banded.
-/// TODO (Task 2/3): confirm exact tier encoding (0=A/1=B/2=C or similar)
-/// against the oracle's actual verdict payload format once that's defined.
-pub const TIER_A_COVERAGE_BPS: i128 = 15_000; // 15x
-pub const TIER_B_COVERAGE_BPS: i128 = 10_000; // 10x
-pub const TIER_C_COVERAGE_BPS: i128 = 5_000; // 5x
-pub const BPS_DENOMINATOR: i128 = 1_000;
+/// Coverage = stake × tier_ratio × TIER_COVERAGE_BPS / 10_000. Corrected
+/// 2026-07-14 (full source read): V8 keeps ratio and coverage-percentage
+/// as TWO separate knobs (`_tierCap`), not one flat multiplier — an admin
+/// can lower TIER_COVERAGE_BPS pool-wide without touching the ratios. An
+/// earlier draft collapsed these into one number per tier, silently
+/// losing that adjustability — fixed here, not carried forward.
+/// Tier encoding matches V8: 1=A, 2=B, 3=C (not 0-indexed).
+pub const TIER_A_RATIO: i128 = 15;
+pub const TIER_B_RATIO: i128 = 10;
+pub const TIER_C_RATIO: i128 = 5;
+pub const TIER_COVERAGE_BPS: i128 = 10_000; // 100% of ratio, admin-adjustable
+pub const TIER_BPS_DENOMINATOR: i128 = 10_000;
 
 // -----------------------------------------------------------------------
 // Claim state machine — full 6 states, ported from V8's Claim.status.
@@ -122,11 +130,16 @@ pub struct Claim {
     pub stake: i128,
     pub cooldown_ends_ledger: u32,
     pub vesting_ends_ledger: u32,
-    /// CORRECTED 2026-07-14: fixed at claim ACTIVATION (end of cooldown),
-    /// not at submission. The daily outflow cap's anti-manipulation
-    /// guarantee depends on this timing being exact — get it wrong and a
-    /// staker withdrawing unrelated stake mid-cooldown could shrink the
-    /// cap denominator below what it was when the claim went active.
+    /// CORRECTED 2026-07-14 (second pass, full source read): NOT "fixed at
+    /// end of cooldown" as an earlier note claimed. Activation happens
+    /// synchronously — either inside submit_claim itself (gate already
+    /// met) or inside unlock_pending_claim (gate met later) — and
+    /// cooldown_ends/vesting_ends are set as FUTURE deadlines starting
+    /// from that same activation moment, not preconditions for it. The
+    /// snapshot is total_staked read immediately before THIS claim's own
+    /// forfeiture decrement, in that same call. Still matters for the
+    /// same reason: get the timing wrong and the outflow cap's
+    /// anti-manipulation guarantee breaks.
     pub total_staked_snapshot: i128,
     /// Assessed by the oracle at claim time, included in its signed
     /// verdict — never re-derivable/forgeable client-side.
