@@ -27,6 +27,32 @@ Requires: `rustc`/`cargo`, the `wasm32v1-none` target
 (`brew install stellar-cli`, or see
 [developers.stellar.org](https://developers.stellar.org)).
 
+### Resource-cost profiling
+
+```bash
+cargo test --package protection-pool profiling -- --nocapture
+```
+
+Measures CPU-instruction and memory cost per hot-path entrypoint via
+`soroban-sdk`'s built-in budget tracker (`env.cost_estimate().budget()`)
+— local only, no deploy. Results as of 2026-07-14 (native-Rust test-host
+execution; real WASM costs run somewhat higher — see the caveat in
+`src/test/profiling_tests.rs`):
+
+| Entrypoint | CPU instructions | Memory (bytes) |
+|---|---|---|
+| `stake` | 465,824 | 160,601 |
+| `withdraw` | 494,378 | 163,572 |
+| `submit_claim` (immediate activation) | 476,538 | 151,656 |
+| `approve_override` (execution branch) | 396,624 | 130,903 |
+| `claim_stream` (partial vesting, hits the daily-outflow-cap path) | 589,472 | 216,761 |
+
+All comfortably under 1% of Soroban's typical ~100M-instruction
+per-transaction CPU budget — no efficiency concerns found at this
+profiling depth. `claim_stream` is the most expensive entrypoint, which
+tracks with it doing the most computation (vesting math + daily-outflow-
+cap math + a token transfer) in one call.
+
 ### Fuzzing
 
 ```bash
@@ -76,6 +102,20 @@ contract's placement, and why:
 | `instance()` | Pool-wide globals: `admin`, `oracle`, `co_signer`, `xlm_token`, `pool_cap`, `total_staked`, `total_allocated`, `total_stakers`, `paused`, the daily outflow-cap counters (`daily_outflow`/`last_outflow_day`), the daily admission-cap counters (`daily_entitlement_total`/`last_entitlement_day`/`daily_claim_count`) | Every call already loads all of `instance()` — never put per-user or unbounded data here. All of these are fixed-size scalars. |
 | `persistent()` | Per-staker (`Stake(Address)`), per-claim (`ClaimRec(BytesN<32>)`), per-override-request (`Override(BytesN<32>)`), banked points (`PointsBalance(Address)`) | Distributed across separate keys, not grown as one struct — bounded per-entity storage, archived+restorable via TTL bumps. |
 | `temporary()` | Not currently used | Reserved for anything that's naturally allowed to expire and isn't load-bearing for solvency (e.g. a future price cache). |
+
+**On struct field sizing:** reviewed 2026-07-14 — Solidity-style slot
+packing (reordering fields to share a 32-byte EVM word) has no real
+equivalent here. Soroban's storage cost is driven by read/write *count*,
+TTL-extension frequency, and total serialized entry size, not sub-word
+bit-packing, and every field in `StakeRecord`/`Claim`/`OverrideRequest`
+is already at its minimum meaningful width: `i128` for token amounts
+(stroops can exceed `u64` for a large pool), `u32` for ledger sequences
+and `u64` for Unix timestamps (Soroban's own native return types —
+narrowing either would just add conversion code for no storage saving).
+`tier: u32` could theoretically be a byte, but Soroban has no native
+`U8` `Val` type to switch to without wrapping overhead that would cost
+more than the few bytes it'd save. Nothing changed here as a result —
+documented so this doesn't get re-asked next audit pass.
 
 **TTL is never a security mechanism.** The 90-day claim-eligibility gate, the
 7-day cooldown, the 45-day vesting window, the 30-day claim-submission

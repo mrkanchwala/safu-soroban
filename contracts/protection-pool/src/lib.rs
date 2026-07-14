@@ -5,21 +5,14 @@
 //! in the research-ops repo for the full mechanics map and the eng review
 //! that locked this scope boundary (2026-07-14).
 //!
-//! Build status: types, storage, admin, stake, and claim are complete and
-//! compiler-verified (full V8-source audit pass, 2026-07-14). All 8 event
-//! emissions use the current `#[contractevent]` pattern (soroban-sdk 27),
-//! verified against docs.rs/developers.stellar.org before implementing.
-//! Not yet unit-tested or security-audited — see the DD session task
-//! list (research-ops, 2026-07-14) for what's left before this is
-//! deploy-ready.
-//!
-//! Local toolchain note: `stellar-cli`/`soroban-cli`, the `wasm32` target,
-//! and `cargo-fuzz` were not installed as of 2026-07-14 — `cargo check`
-//! passes clean, but the actual `wasm32v1-none` build has not run.
-//! Treat this as compiler-verified for types/logic, not yet verified for
-//! the real deploy target.
+//! See README.md at the repo root for build/test instructions, the full
+//! storage model, mechanics ported from V8, deliberate deviations, and
+//! current known-open items — kept there so it's visible to anyone
+//! reading this repo directly, not just this doc comment.
 
 #![no_std]
+#[cfg(test)]
+extern crate std;
 
 mod admin;
 mod claim;

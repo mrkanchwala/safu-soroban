@@ -9,5 +9,6 @@ mod admin_tests;
 mod claim_tests;
 mod common;
 mod override_tests;
+mod profiling_tests;
 mod solvency_tests;
 mod stake_tests;
