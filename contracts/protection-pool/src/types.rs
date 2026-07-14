@@ -174,6 +174,14 @@ pub struct OverrideRequest {
     pub tx_hash: BytesN<32>,
     pub entitlement: i128,
     pub tier: u32,
-    pub owner_approved: bool,
-    pub co_signer_approved: bool,
+    /// The actual approving address, not a bare bool — found via
+    /// adversarial review (2026-07-14, Solodit "operator retains power
+    /// after removal" pattern class): a bool can't tell a CURRENT
+    /// admin/coSigner's approval apart from a STALE one left over from
+    /// before a set_co_signer/transfer_admin rotation. Readiness is
+    /// derived by comparing these against the CURRENT admin/coSigner at
+    /// execution time, so a rotation automatically invalidates an old
+    /// approval instead of letting it silently carry forward.
+    pub owner_approver: Option<Address>,
+    pub co_signer_approver: Option<Address>,
 }

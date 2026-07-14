@@ -495,8 +495,8 @@ pub fn approve_override(
             tx_hash: tx_hash.clone(),
             entitlement,
             tier,
-            owner_approved: false,
-            co_signer_approved: false,
+            owner_approver: None,
+            co_signer_approver: None,
         });
 
     if req.entitlement != entitlement || req.tier != tier {
@@ -504,15 +504,22 @@ pub fn approve_override(
     }
 
     if caller == &admin {
-        req.owner_approved = true;
+        req.owner_approver = Some(admin.clone());
     }
     if caller == &co_signer {
-        req.co_signer_approved = true;
+        req.co_signer_approver = Some(co_signer.clone());
     }
 
-    // Degenerate case: admin and coSigner are the same address — one
+    // Ready only if BOTH approvers still match the CURRENT admin/coSigner
+    // — not just "some approval was recorded at some point." A rotation
+    // via set_co_signer/transfer_admin between the two approvals makes a
+    // stale approver no longer equal the current address, so `ready`
+    // correctly stays false until the NEW party re-approves. Degenerate
+    // case unchanged: admin and coSigner are the same address — one
     // approval suffices.
-    let ready = (req.owner_approved && req.co_signer_approved) || co_signer == admin;
+    let ready = (req.owner_approver == Some(admin.clone())
+        && req.co_signer_approver == Some(co_signer.clone()))
+        || co_signer == admin;
 
     if ready {
         execute_override(env, &claim_id, &req);
@@ -525,8 +532,8 @@ pub fn approve_override(
                 tx_hash: tx_hash.clone(),
                 entitlement,
                 tier,
-                owner_approved: false,
-                co_signer_approved: false,
+                owner_approver: None,
+                co_signer_approver: None,
             },
         );
     } else {

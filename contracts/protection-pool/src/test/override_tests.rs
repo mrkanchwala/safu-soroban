@@ -10,6 +10,75 @@ const ENTITLEMENT: i128 = 1_000_000;
 const TIER_C: u32 = 3;
 
 #[test]
+fn stale_approval_from_rotated_cosigner_does_not_count() {
+    // Regression test for a real bug found via adversarial review
+    // (2026-07-14, Solodit "operator retains power after removal from
+    // governance" pattern class): OverrideRequest used to store bare
+    // owner_approved/co_signer_approved bools with no record of WHO
+    // approved. If coSigner was rotated between the two approvals, the
+    // OLD coSigner's stale `true` flag still counted toward readiness,
+    // silently degrading the 2-of-2 property to "1 current + 1 stale"
+    // after any coSigner rotation — exactly the scenario an admin would
+    // hit revoking a suspected-compromised coSigner key.
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+
+    // Old coSigner approves first.
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
+
+    // Admin rotates coSigner out — e.g. because it's suspected compromised.
+    let new_co_signer = Address::generate(&env);
+    s.client.set_co_signer(&new_co_signer);
+
+    // Admin's approval alone must NOT execute — the stored approval was
+    // from the OLD coSigner, which no longer matches the current one.
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    let claim_id = compute_test_claim_id(&env, &staker, &hash);
+    assert!(
+        s.client.get_claim(&claim_id).is_none(),
+        "stale coSigner approval must not combine with a fresh admin approval"
+    );
+
+    // The NEW coSigner approving (fresh, current) is what actually
+    // completes the 2-of-2 and executes.
+    s.client
+        .approve_override(&new_co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Active);
+}
+
+#[test]
+fn stale_approval_from_transferred_admin_does_not_count() {
+    // Same pattern, admin side: an admin's approval recorded BEFORE
+    // transfer_admin must not combine with the coSigner's approval to
+    // execute under the NEW admin's authority.
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+
+    let new_admin = Address::generate(&env);
+    s.client.transfer_admin(&new_admin);
+
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    let claim_id = compute_test_claim_id(&env, &staker, &hash);
+    assert!(s.client.get_claim(&claim_id).is_none());
+
+    s.client
+        .approve_override(&new_admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Active);
+}
+
+#[test]
 fn single_approval_does_not_execute() {
     let env = new_env();
     let s = setup(&env);
