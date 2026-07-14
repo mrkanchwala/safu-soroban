@@ -13,6 +13,21 @@ use soroban_sdk::{contracttype, Address, BytesN};
 // -----------------------------------------------------------------------
 
 pub const LEDGERS_PER_DAY: u32 = 17_280;
+/// Real calendar time, for absolute-timestamp checks (hack_timestamp
+/// sanity, claim window, daily-counter day boundaries) — distinct from
+/// the LEDGERS_PER_DAY constants above, which drive duration/gate math
+/// off `env.ledger().sequence()`. Soroban exposes both `sequence()` (a
+/// ledger number) and `timestamp()` (real Unix seconds) on `env.ledger()`;
+/// mixing them for their respective purposes is deliberate, not sloppy.
+pub const SECONDS_PER_DAY: u64 = 86_400;
+/// 30-day window after a hack within which the claim must be submitted,
+/// expressed in real seconds (compared against `env.ledger().timestamp()`
+/// and the oracle-supplied `hack_timestamp`, both Unix seconds).
+pub const CLAIM_WINDOW_SECONDS: u64 = 30 * SECONDS_PER_DAY;
+/// Shared percentage-math denominator (tier cap, stress cap, dynamic
+/// outflow bps) — same value as STAKE_BPS_DENOMINATOR/TIER_BPS_DENOMINATOR
+/// below, kept as its own constant since those two are domain-specific.
+pub const BPS_DENOMINATOR: i128 = 10_000;
 
 /// 90-day time gate before a stake is claim-eligible (V8: CLAIM_MIN_DAYS).
 pub const TIME_GATE_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
@@ -20,10 +35,6 @@ pub const TIME_GATE_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
 pub const COOLDOWN_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
 /// 45-day linear vesting window, starting at cooldown end (V8: VESTING).
 pub const VESTING_LEDGERS: u32 = 45 * LEDGERS_PER_DAY;
-/// 30-day window after a hack within which the claim must be submitted
-/// (V8: CLAIM_WINDOW) — missing from the first two research passes, found
-/// only on a full line-by-line read of the source (2026-07-14).
-pub const CLAIM_WINDOW_LEDGERS: u32 = 30 * LEDGERS_PER_DAY;
 /// 365-day re-stake lock applied only on a false-positive cancel, never on
 /// a genuine paid claim (that forfeiture is permanent — do not conflate).
 pub const PENALTY_LOCK_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
@@ -100,6 +111,11 @@ pub struct StakeRecord {
     pub beneficiary_hash: BytesN<32>,
     pub amount: i128,
     pub staked_at_ledger: u32,
+    /// Real Unix timestamp at stake time — used ONLY for the absolute
+    /// hack_timestamp sanity check in submit_claim ("hack can't predate
+    /// the stake"). staked_at_ledger remains the source of truth for all
+    /// duration/gate math (time gate, cooldown, vesting, penalty lock).
+    pub staked_at_timestamp: u64,
     /// Set by cancel_claim on a false-positive reversal; blocks withdraw
     /// for PENALTY_LOCK_LEDGERS. 0 if never penalized.
     pub penalty_locked_until_ledger: u32,

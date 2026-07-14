@@ -5,10 +5,13 @@
 //! in the research-ops repo for the full mechanics map and the eng review
 //! that locked this scope boundary (2026-07-14).
 //!
-//! Build status: scaffold + types + storage done. stake.rs has the full
-//! stake/withdraw implementation. claim.rs and admin.rs are structural
-//! stubs pending the next build pass — see the task list in the DD session
-//! that created this (research-ops, 2026-07-14) for what's left.
+//! Build status: types, storage, admin, stake, and claim are complete and
+//! compiler-verified (full V8-source audit pass, 2026-07-14). All 8 event
+//! emissions use the current `#[contractevent]` pattern (soroban-sdk 27),
+//! verified against docs.rs/developers.stellar.org before implementing.
+//! Not yet unit-tested or security-audited — see the DD session task
+//! list (research-ops, 2026-07-14) for what's left before this is
+//! deploy-ready.
 //!
 //! Local toolchain note: `stellar-cli`/`soroban-cli`, the `wasm32` target,
 //! and `cargo-fuzz` were not installed as of 2026-07-14 — this crate has
@@ -23,7 +26,7 @@ mod stake;
 mod storage;
 mod types;
 
-use soroban_sdk::{contract, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
 
 #[contract]
 pub struct ProtectionPool;
@@ -55,6 +58,26 @@ impl ProtectionPool {
         admin::set_pool_cap(&env, new_cap);
     }
 
+    pub fn transfer_admin(env: Env, new_admin: Address) {
+        admin::transfer_admin(&env, &new_admin);
+    }
+
+    pub fn pause(env: Env) {
+        admin::pause(&env);
+    }
+
+    pub fn unpause(env: Env) {
+        admin::unpause(&env);
+    }
+
+    pub fn suspend_stake(env: Env, wallet: Address) {
+        admin::suspend_stake(&env, &wallet);
+    }
+
+    pub fn unsuspend_stake(env: Env, wallet: Address) {
+        admin::unsuspend_stake(&env, &wallet);
+    }
+
     // -- stake / withdraw --
 
     pub fn stake(env: Env, staker: Address, amount: i128, beneficiary: Address) {
@@ -65,7 +88,53 @@ impl ProtectionPool {
         stake::withdraw(&env, &staker, &beneficiary);
     }
 
-    // -- claims (stubs — Task 3) --
-    // submit_claim / claim_stream / cancel_claim / request_override /
-    // approve_override land here once claim.rs is implemented.
+    pub fn set_beneficiary(env: Env, staker: Address, new_beneficiary: Address) {
+        stake::set_beneficiary(&env, &staker, &new_beneficiary);
+    }
+
+    pub fn emergency_exit(env: Env, staker: Address) {
+        stake::emergency_exit(&env, &staker);
+    }
+
+    // -- claims --
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn submit_claim(
+        env: Env,
+        caller: Address,
+        wallet: Address,
+        tx_hash: BytesN<32>,
+        entitlement: i128,
+        tier: u32,
+        hack_timestamp: u64,
+    ) -> BytesN<32> {
+        claim::submit_claim(&env, &caller, &wallet, &tx_hash, entitlement, tier, hack_timestamp)
+    }
+
+    pub fn unlock_pending_claim(env: Env, claim_id: BytesN<32>) {
+        claim::unlock_pending_claim(&env, &claim_id);
+    }
+
+    pub fn claim_stream(env: Env, claim_id: BytesN<32>, beneficiary: Address) -> i128 {
+        claim::claim_stream(&env, &claim_id, &beneficiary)
+    }
+
+    pub fn cancel_claim(env: Env, claim_id: BytesN<32>) {
+        claim::cancel_claim(&env, &claim_id);
+    }
+
+    pub fn approve_override(
+        env: Env,
+        caller: Address,
+        wallet: Address,
+        tx_hash: BytesN<32>,
+        entitlement: i128,
+        tier: u32,
+    ) {
+        claim::approve_override(&env, &caller, &wallet, &tx_hash, entitlement, tier);
+    }
+
+    pub fn cancel_pending_override(env: Env, caller: Address, wallet: Address, tx_hash: BytesN<32>) {
+        claim::cancel_pending_override(&env, &caller, &wallet, &tx_hash);
+    }
 }

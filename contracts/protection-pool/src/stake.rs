@@ -18,12 +18,39 @@
 //! types.rs::StakeRecord doc) and validates identity, matching V8's
 //! `stakeETH` checks exactly.
 
-use soroban_sdk::{token::TokenClient, xdr::ToXdr, Address, Env};
+use soroban_sdk::{contractevent, token::TokenClient, xdr::ToXdr, Address, Env};
 
 use crate::storage;
 use crate::types::{
     StakeRecord, LEDGERS_PER_DAY, MAX_STAKE_BPS, MIN_STAKE_BPS, STAKE_BPS_DENOMINATOR,
 };
+
+// -----------------------------------------------------------------------
+// Events — soroban-sdk 27's #[contractevent] pattern (verified against
+// docs.rs/developers.stellar.org 2026-07-14), not the deprecated raw
+// env.events().publish() call.
+// -----------------------------------------------------------------------
+
+#[contractevent]
+pub struct Staked {
+    #[topic]
+    pub staker: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct Withdrawn {
+    #[topic]
+    pub staker: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct EmergencyExit {
+    #[topic]
+    pub staker: Address,
+    pub amount: i128,
+}
 
 /// V8 `_computePoints`: tenure-banded (100/120/150/200 pts/day at
 /// 0-90/91-180/181-365/365+ days) × stake/max_stake. V8 divides by the
@@ -32,10 +59,18 @@ use crate::types::{
 /// flagged in the KB as a linkage decision, not silently assumed. Returns
 /// 0 if the stake is empty or already withdrawn (matches V8 exactly).
 pub fn compute_points(env: &Env, wallet: &Address) -> i128 {
-    let record = match storage::get_stake(env, wallet) {
-        Some(r) => r,
-        None => return 0,
-    };
+    match storage::get_stake(env, wallet) {
+        Some(r) => compute_points_for_record(env, &r),
+        None => 0,
+    }
+}
+
+/// Same formula as `compute_points`, taking a record directly rather than
+/// re-fetching from storage. Used by claim.rs's forfeiture path, which
+/// needs to compute points from an in-memory (not-yet-persisted) record —
+/// re-fetching would rely on storage still coincidentally matching local
+/// state rather than being an explicit invariant.
+pub fn compute_points_for_record(env: &Env, record: &StakeRecord) -> i128 {
     if record.amount <= 0 || record.withdrawn {
         return 0;
     }
@@ -125,6 +160,7 @@ pub fn stake(env: &Env, staker: &Address, amount: i128, beneficiary: &Address) {
         beneficiary_hash,
         amount,
         staked_at_ledger: env.ledger().sequence(),
+        staked_at_timestamp: env.ledger().timestamp(),
         penalty_locked_until_ledger: 0,
         withdrawn: false,
         suspended: false,
@@ -135,8 +171,7 @@ pub fn stake(env: &Env, staker: &Address, amount: i128, beneficiary: &Address) {
     storage::set_total_stakers(env, storage::get_total_stakers(env) + 1);
     storage::bump_instance_ttl(env);
 
-    env.events()
-        .publish((soroban_sdk::symbol_short!("staked"), staker.clone()), amount);
+    Staked { staker: staker.clone(), amount }.publish(env);
 
     // Interaction — SAC transfer, staker to contract.
     let token = TokenClient::new(env, &xlm_token_address(env));
@@ -220,8 +255,7 @@ pub fn withdraw(env: &Env, staker: &Address, beneficiary: &Address) {
     storage::set_total_stakers(env, storage::get_total_stakers(env).saturating_sub(1));
     storage::bump_instance_ttl(env);
 
-    env.events()
-        .publish((soroban_sdk::symbol_short!("withdrawn"), staker.clone()), amount);
+    Withdrawn { staker: staker.clone(), amount }.publish(env);
 
     // Interaction — SAC transfer, contract to beneficiary.
     let token = TokenClient::new(env, &xlm_token_address(env));
@@ -256,8 +290,7 @@ pub fn emergency_exit(env: &Env, staker: &Address) {
     storage::set_total_stakers(env, storage::get_total_stakers(env).saturating_sub(1));
     storage::bump_instance_ttl(env);
 
-    env.events()
-        .publish((soroban_sdk::symbol_short!("emgexit"), staker.clone()), amount);
+    EmergencyExit { staker: staker.clone(), amount }.publish(env);
 
     let token = TokenClient::new(env, &xlm_token_address(env));
     token.transfer(&env.current_contract_address(), staker, &amount);
