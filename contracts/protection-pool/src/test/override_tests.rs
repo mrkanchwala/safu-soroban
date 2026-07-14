@@ -1,0 +1,286 @@
+#![cfg(test)]
+
+use soroban_sdk::testutils::Address as _;
+use soroban_sdk::Address;
+
+use super::common::*;
+use crate::types::ClaimStatus;
+
+const ENTITLEMENT: i128 = 1_000_000;
+const TIER_C: u32 = 3;
+
+#[test]
+fn single_approval_does_not_execute() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    // execute_override creates the Claim record — no claim exists yet
+    // with only one of the two approvals in.
+    let claim_id = compute_test_claim_id(&env, &staker, &hash);
+    assert!(s.client.get_claim(&claim_id).is_none());
+    // Stake untouched — still forfeitable in the normal flow, proving
+    // the single approval had zero effect.
+    assert_eq!(s.client.get_total_staked(), MID_STAKE);
+}
+
+#[test]
+fn second_matching_approval_executes() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
+
+    let claim_id = compute_test_claim_id(&env, &staker, &hash);
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Active);
+    assert_eq!(claim.entitlement, ENTITLEMENT);
+    // Stake forfeited by the override, same as a normal activation.
+    assert_eq!(s.client.get_total_staked(), 0);
+}
+
+#[test]
+fn override_bypasses_time_gate() {
+    // The whole point of the escape hatch: no 90-day wait, forfeits
+    // immediately on the second approval regardless of stake age.
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s); // staked THIS ledger, gate nowhere close to met
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    assert_eq!(s.client.get_total_staked(), 0);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: override params mismatch with pending request")]
+fn mismatched_second_approval_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &(ENTITLEMENT + 1), &TIER_C);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: caller must be admin or coSigner")]
+fn approve_override_wrong_caller_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let random = Address::generate(&env);
+    s.client
+        .approve_override(&random, &staker, &tx_hash(&env, 1), &ENTITLEMENT, &TIER_C);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: entitlement must be positive")]
+fn approve_override_zero_entitlement_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    s.client
+        .approve_override(&s.admin, &staker, &tx_hash(&env, 1), &0, &TIER_C);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: invalid tier")]
+fn approve_override_invalid_tier_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    s.client
+        .approve_override(&s.admin, &staker, &tx_hash(&env, 1), &ENTITLEMENT, &9);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: entitlement exceeds tier cap")]
+fn approve_override_exceeds_tier_cap_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    let too_much = 600_000_000i128; // tier C cap for MID_STAKE is 500_000_000
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &too_much, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &too_much, &TIER_C);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: insolvent")]
+fn approve_override_insolvent_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    // Under tier cap (500M) but exceeds total_staked (100M) — same
+    // solvency invariant applies to the override path.
+    let over_solvent = MID_STAKE + 1;
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &over_solvent, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &over_solvent, &TIER_C);
+}
+
+#[test]
+fn override_reexecution_same_params_resets_cooldown() {
+    // KB §1b: re-executing on a still-Active (not Completed) claim is
+    // allowed and gives it fresh cooldown/vesting deadlines — this is
+    // the "correction" mechanism for identical-params re-approval.
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
+
+    advance_days(&env, 3); // partway into the first cooldown
+
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
+
+    let claim_id = compute_test_claim_id(&env, &staker, &hash);
+    // Total staked should NOT have decremented a second time — the stake
+    // was already forfeited by the first execution.
+    assert_eq!(s.client.get_total_staked(), 0);
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Active);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: claim already completed")]
+fn override_on_completed_claim_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    let small = 900_000i128; // fully vests fast, low enough to clear outflow cap in one call
+
+    s.client.approve_override(&s.admin, &staker, &hash, &small, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &small, &TIER_C);
+
+    let claim_id = compute_test_claim_id(&env, &staker, &hash);
+    advance_days(&env, 7);
+    advance_days(&env, 45);
+    s.client.claim_stream(&claim_id, &ben);
+
+    s.client.approve_override(&s.admin, &staker, &hash, &small, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &small, &TIER_C);
+}
+
+#[test]
+fn degenerate_case_cosigner_equals_admin_single_approval_executes() {
+    let env = new_env();
+    let s = setup(&env);
+    // set_co_signer only checks against oracle, not admin (see claim.rs
+    // module doc + smartcontract-soroban.md §5b — a deliberate asymmetry
+    // matching V8, not a bug) — this is the only way to legally reach
+    // coSigner == admin at runtime, since initialize() blocks it upfront.
+    s.client.set_co_signer(&s.admin);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    let claim_id = compute_test_claim_id(&env, &staker, &hash);
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Active);
+}
+
+// -----------------------------------------------------------------------
+// cancel_pending_override
+// -----------------------------------------------------------------------
+
+#[test]
+fn cancel_pending_override_allows_corrected_resubmission() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    s.client.cancel_pending_override(&s.admin, &staker, &hash);
+
+    // Different entitlement now — would have panicked on "params
+    // mismatch" before the cancel fix; must succeed post-cancel.
+    let corrected = ENTITLEMENT + 500_000;
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &corrected, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &corrected, &TIER_C);
+
+    let claim_id = compute_test_claim_id(&env, &staker, &hash);
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.entitlement, corrected);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: caller must be admin or coSigner")]
+fn cancel_pending_override_wrong_caller_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    let random = Address::generate(&env);
+    s.client.cancel_pending_override(&random, &staker, &hash);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: no pending override")]
+fn cancel_pending_override_nonexistent_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    s.client
+        .cancel_pending_override(&s.admin, &staker, &tx_hash(&env, 99));
+}
+
+#[test]
+#[should_panic(expected = "SAFU: override already executed")]
+fn cancel_pending_override_after_execution_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
+    // Executed (Active, not Completed) — cancel must still refuse, since
+    // an executed claim is a real on-chain commitment, not a stale draft.
+    s.client.cancel_pending_override(&s.admin, &staker, &hash);
+}
+
+/// Test-only re-derivation of the on-chain claim id (sha256 of wallet
+/// XDR ++ tx_hash bytes) — mirrors claim.rs::compute_claim_id exactly so
+/// tests can look up claims created via the override path without a
+/// dedicated "last claim id" getter.
+fn compute_test_claim_id(
+    env: &soroban_sdk::Env,
+    wallet: &Address,
+    hash: &soroban_sdk::BytesN<32>,
+) -> soroban_sdk::BytesN<32> {
+    use soroban_sdk::xdr::ToXdr;
+    let mut buf = wallet.to_xdr(env);
+    buf.append(&soroban_sdk::Bytes::from_array(env, &hash.to_array()));
+    env.crypto().sha256(&buf).to_bytes()
+}

@@ -14,9 +14,10 @@
 //! deploy-ready.
 //!
 //! Local toolchain note: `stellar-cli`/`soroban-cli`, the `wasm32` target,
-//! and `cargo-fuzz` were not installed as of 2026-07-14 — this crate has
-//! not been compiled yet. Treat all of it as reviewed-on-paper, not
-//! verified, until `cargo build --target wasm32v1-none` actually runs.
+//! and `cargo-fuzz` were not installed as of 2026-07-14 — `cargo check`
+//! passes clean, but the actual `wasm32v1-none` build has not run.
+//! Treat this as compiler-verified for types/logic, not yet verified for
+//! the real deploy target.
 
 #![no_std]
 
@@ -24,9 +25,13 @@ mod admin;
 mod claim;
 mod stake;
 mod storage;
+#[cfg(test)]
+mod test;
 mod types;
 
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
+
+use crate::types::{Claim, StakeRecord};
 
 #[contract]
 pub struct ProtectionPool;
@@ -136,5 +141,39 @@ impl ProtectionPool {
 
     pub fn cancel_pending_override(env: Env, caller: Address, wallet: Address, tx_hash: BytesN<32>) {
         claim::cancel_pending_override(&env, &caller, &wallet, &tx_hash);
+    }
+
+    // -- views --
+    // V8 parity gap closed 2026-07-14: V8 exposes stakeOf/isEligible/
+    // pointsOf/isClaimEligible as public views; the original build passes
+    // never ported any read functions at all. Thin wrappers over storage
+    // functions that already existed — no new logic.
+
+    pub fn get_stake(env: Env, wallet: Address) -> Option<StakeRecord> {
+        storage::get_stake(&env, &wallet)
+    }
+
+    pub fn get_claim(env: Env, claim_id: BytesN<32>) -> Option<Claim> {
+        storage::get_claim(&env, &claim_id)
+    }
+
+    pub fn get_points_balance(env: Env, wallet: Address) -> i128 {
+        storage::get_points_balance(&env, &wallet)
+    }
+
+    pub fn get_total_staked(env: Env) -> i128 {
+        storage::get_total_staked(&env)
+    }
+
+    pub fn get_total_allocated(env: Env) -> i128 {
+        storage::get_total_allocated(&env)
+    }
+
+    pub fn get_total_stakers(env: Env) -> u32 {
+        storage::get_total_stakers(&env)
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        storage::is_paused(&env)
     }
 }

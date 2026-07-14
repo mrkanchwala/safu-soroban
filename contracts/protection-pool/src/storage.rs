@@ -288,6 +288,16 @@ pub fn set_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
         .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TO);
 }
 
+/// Fully clears a pending override request (not a reset-in-place) — used
+/// by `cancel_pending_override` so a corrected resubmission with
+/// different entitlement/tier doesn't immediately hit the params-mismatch
+/// guard against stale stored values.
+pub fn remove_override(env: &Env, claim_id: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Override(claim_id.clone()));
+}
+
 // -----------------------------------------------------------------------
 // Points balance (persistent) — banked at forfeiture time
 // -----------------------------------------------------------------------

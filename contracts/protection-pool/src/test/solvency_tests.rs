@@ -1,0 +1,229 @@
+#![cfg(test)]
+
+use soroban_sdk::testutils::Address as _;
+use soroban_sdk::Address;
+
+use super::common::*;
+
+const TIER_A: u32 = 1;
+const TIER_B: u32 = 2;
+const TIER_C: u32 = 3;
+
+#[test]
+fn tier_caps_apply_correct_ratios() {
+    // tier_cap = stake * ratio (TIER_COVERAGE_BPS is 100% by default) —
+    // A=15x, B=10x, C=5x. Verified indirectly: exactly-at-cap succeeds,
+    // one-stroop-over panics, for each tier. Caller alternates
+    // oracle/admin — three same-day oracle submissions would trip the
+    // unrelated per-day oracle rate limit before reaching what this test
+    // actually targets.
+    //
+    // A single MID_STAKE staker's own 100_000_000 can't solvently back a
+    // 1_500_000_000 (tier A, 15x) entitlement — the tier cap only bounds
+    // what's ASKED for, not what the pool can actually pay. Raise the
+    // pool cap and add a large anchor staker so total_staked (and the
+    // 25%-of-pool admission stress cap) can actually cover it; the
+    // anchor never claims, so it doesn't affect tier math for anyone
+    // else.
+    // Anchor sized so the 25%-of-pool admission stress cap stays clear
+    // even after A's and B's entitlements are already reserved (checked
+    // by hand: utilization stays under 20% at every step against this
+    // test's three entitlements). Kept within the DEFAULT pool cap's
+    // bounds (11 stakers at MAX_STAKE, not a raised cap) so staker_a/b/c
+    // can keep using the shared MID_STAKE-based helper — raising the
+    // pool cap would have shifted their min/max bounds too and broken
+    // `staked_wallet`'s fixed MID_STAKE amount.
+    let env = new_env();
+    let s = setup(&env);
+    for i in 0..11u8 {
+        let anchor = new_funded_address(&env, &s, MAX_STAKE);
+        let anchor_ben = Address::generate(&env);
+        s.client.stake(&anchor, &MAX_STAKE, &anchor_ben);
+        let _ = i;
+    }
+
+    let (staker_a, _b) = staked_wallet(&env, &s);
+    s.client.submit_claim(
+        &s.oracle,
+        &staker_a,
+        &tx_hash(&env, 1),
+        &(MID_STAKE * 15), // exactly tier A cap
+        &TIER_A,
+        &now_ts(&env),
+    );
+
+    let (staker_b, _b) = staked_wallet(&env, &s);
+    s.client.submit_claim(
+        &s.admin,
+        &staker_b,
+        &tx_hash(&env, 2),
+        &(MID_STAKE * 10), // exactly tier B cap
+        &TIER_B,
+        &now_ts(&env),
+    );
+
+    let (staker_c, _b) = staked_wallet(&env, &s);
+    s.client.submit_claim(
+        &s.admin,
+        &staker_c,
+        &tx_hash(&env, 3),
+        &(MID_STAKE * 5), // exactly tier C cap
+        &TIER_C,
+        &now_ts(&env),
+    );
+}
+
+#[test]
+#[should_panic(expected = "SAFU: entitlement exceeds tier cap")]
+fn tier_a_one_stroop_over_cap_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _b) = staked_wallet(&env, &s);
+    s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &(MID_STAKE * 15 + 1),
+        &TIER_A,
+        &now_ts(&env),
+    );
+}
+
+#[test]
+fn total_allocated_never_exceeds_total_staked_across_multiple_claims() {
+    let env = new_env();
+    let s = setup(&env);
+    // Three independent stakers, each submits a modest claim — the
+    // aggregate solvency invariant (total_allocated <= total_staked)
+    // must hold after every single submission, not just at the end.
+    // Caller is admin, not oracle — the oracle's per-day claim-count
+    // limit (total_stakers/10, min 1) would otherwise fire after the
+    // first submission with only a handful of stakers, which is a
+    // separate mechanic from what this test is checking.
+    for i in 0..3u8 {
+        let (staker, _b) = staked_wallet(&env, &s);
+        s.client.submit_claim(
+            &s.admin,
+            &staker,
+            &tx_hash(&env, i),
+            &1_000_000,
+            &TIER_C,
+            &now_ts(&env),
+        );
+        assert!(s.client.get_total_allocated() <= s.client.get_total_staked());
+    }
+}
+
+#[test]
+fn cancelling_one_claim_does_not_affect_another_stakers_solvency() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker1, _b1) = staked_wallet(&env, &s);
+    let (staker2, _b2) = staked_wallet(&env, &s);
+
+    let claim1 = s.client.submit_claim(
+        &s.oracle,
+        &staker1,
+        &tx_hash(&env, 1),
+        &1_000_000,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    s.client.submit_claim(
+        &s.admin, // avoid the oracle's per-day claim-count limit
+        &staker2,
+        &tx_hash(&env, 2),
+        &2_000_000,
+        &TIER_C,
+        &now_ts(&env),
+    );
+
+    s.client.cancel_claim(&claim1);
+
+    // staker2's claim reservation must be untouched by staker1's cancel.
+    assert_eq!(s.client.get_total_allocated(), 2_000_000);
+}
+
+#[test]
+fn points_accrue_tenure_banded_and_bank_on_withdraw() {
+    let env = new_env();
+    let s = setup(&env);
+    let staker = new_funded_address(&env, &s, MID_STAKE);
+    let ben = Address::generate(&env);
+    s.client.stake(&staker, &MID_STAKE, &ben);
+
+    // 30 days at the 0-90-day band (100 pts/day) — points formula:
+    // base = 30*100 = 3000; × stake/max_stake (MID_STAKE/MAX_STAKE).
+    advance_days(&env, 30);
+    s.client.withdraw(&staker, &ben);
+
+    let expected = 3_000i128 * MID_STAKE / MAX_STAKE;
+    assert_eq!(s.client.get_points_balance(&staker), expected);
+}
+
+#[test]
+fn points_span_multiple_tenure_bands() {
+    let env = new_env();
+    let s = setup(&env);
+    let staker = new_funded_address(&env, &s, MID_STAKE);
+    let ben = Address::generate(&env);
+    s.client.stake(&staker, &MID_STAKE, &ben);
+
+    // 100 days: 90 days at band 1 (100/day) + 10 days at band 2 (120/day).
+    advance_days(&env, 100);
+    s.client.withdraw(&staker, &ben);
+
+    let base = 90 * 100 + 10 * 120;
+    let expected = (base as i128) * MID_STAKE / MAX_STAKE;
+    assert_eq!(s.client.get_points_balance(&staker), expected);
+}
+
+#[test]
+fn points_zero_for_zero_duration_withdraw() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, ben) = staked_wallet(&env, &s);
+    // Withdraw in the exact same ledger as the stake — zero tenure.
+    s.client.withdraw(&staker, &ben);
+    assert_eq!(s.client.get_points_balance(&staker), 0);
+}
+
+#[test]
+fn points_accumulate_across_multiple_stake_cycles() {
+    let env = new_env();
+    let s = setup(&env);
+    let staker = new_funded_address(&env, &s, MID_STAKE * 2);
+    let ben = Address::generate(&env);
+
+    s.client.stake(&staker, &MID_STAKE, &ben);
+    advance_days(&env, 30);
+    s.client.withdraw(&staker, &ben);
+    let first_cycle_points = s.client.get_points_balance(&staker);
+    assert!(first_cycle_points > 0);
+
+    s.client.stake(&staker, &MID_STAKE, &ben);
+    advance_days(&env, 30);
+    s.client.withdraw(&staker, &ben);
+
+    // Points bank cumulatively across cycles — never burned, never reset.
+    assert_eq!(s.client.get_points_balance(&staker), first_cycle_points * 2);
+}
+
+#[test]
+fn forfeited_stake_still_banks_points_earned_before_the_claim() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90); // gate met — activates immediately on submit
+    s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &1_000_000,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    let base = 90 * 100;
+    let expected = (base as i128) * MID_STAKE / MAX_STAKE;
+    assert_eq!(s.client.get_points_balance(&staker), expected);
+}

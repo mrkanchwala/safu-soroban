@@ -565,9 +565,23 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
         panic!("SAFU: entitlement exceeds tier cap");
     }
 
+    // If this stake was already forfeited (a same-claim-id re-execution —
+    // e.g. resetting cooldown with identical terms), that principal left
+    // total_staked on the FIRST execution and is now earmarked reserve
+    // capacity for exactly this claim, not fresh pool capacity being
+    // drawn down again. Add it back for this check only, so re-execution
+    // is evaluated against the same pool view the first execution saw —
+    // found via a failing test (a same-params re-approval incorrectly
+    // reported insolvent because total_staked no longer included this
+    // stake's own already-forfeited principal).
     let total_staked = storage::get_total_staked(env);
+    let effective_total_staked = if stake_record.withdrawn {
+        total_staked + original_stake_amount
+    } else {
+        total_staked
+    };
     let total_allocated = storage::get_total_allocated(env);
-    if total_allocated + req.entitlement > total_staked {
+    if total_allocated + req.entitlement > effective_total_staked {
         panic!("SAFU: insolvent");
     }
     storage::set_total_allocated(env, total_allocated + req.entitlement);
@@ -627,20 +641,22 @@ pub fn cancel_pending_override(
     let claim_id = compute_claim_id(env, wallet, tx_hash);
     let req: OverrideRequest =
         storage::get_override(env, &claim_id).expect("SAFU: no pending override");
-    if req.owner_approved && req.co_signer_approved {
-        panic!("SAFU: override already executed");
-    }
 
-    storage::set_override(
-        env,
-        &claim_id,
-        &OverrideRequest {
-            wallet: req.wallet,
-            tx_hash: req.tx_hash,
-            entitlement: req.entitlement,
-            tier: req.tier,
-            owner_approved: false,
-            co_signer_approved: false,
-        },
-    );
+    // NOT `req.owner_approved && req.co_signer_approved` — execute_override
+    // always resets both flags to false right after executing (replay
+    // guard), so that condition can never actually observe "already
+    // executed"; it would just silently no-op on a stale request instead
+    // of telling the caller why. Check the Claim record's real status
+    // instead — execute_override always leaves it Active or Completed.
+    if let Some(existing) = storage::get_claim(env, &claim_id) {
+        if existing.status == ClaimStatus::Active || existing.status == ClaimStatus::Completed {
+            panic!("SAFU: override already executed");
+        }
+    }
+    let _ = req; // existence already confirmed via storage::get_override above
+
+    // Fully cleared, not reset-in-place — a corrected resubmission with
+    // different entitlement/tier must be treated as genuinely fresh, not
+    // compared against these now-abandoned values.
+    storage::remove_override(env, &claim_id);
 }
