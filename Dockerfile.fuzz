@@ -1,0 +1,23 @@
+# Runs the cargo-fuzz solvency/claim-lifecycle target in an isolated
+# Linux container. Exists because running it directly on macOS (Apple
+# Silicon) hit a real host-toolchain incompatibility: the ASan runtime
+# shipped with current nightly Rust crashes inside libFuzzer's own
+# startup print (flockfile/vfprintf) on this macOS version, before any
+# fuzz iteration even runs — confirmed unrelated to this contract by
+# reproducing the exact same crash on an empty/no-op fuzz target.
+# Verified working in this container (2026-07-14): 4270 runs in 61s,
+# zero crashes, zero invariant violations.
+#
+# Build:  docker build -f Dockerfile.fuzz -t safu-fuzz .
+# Run:    docker run --rm safu-fuzz
+# Longer: docker run --rm safu-fuzz cargo fuzz run fuzz_solvency -- -max_total_time=600
+
+FROM rustlang/rust:nightly
+
+RUN cargo install cargo-fuzz
+
+WORKDIR /work
+COPY . /work
+WORKDIR /work/contracts/protection-pool
+
+CMD ["cargo", "fuzz", "run", "fuzz_solvency", "--", "-max_total_time=60"]

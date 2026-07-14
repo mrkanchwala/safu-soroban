@@ -1,0 +1,26 @@
+[package]
+name = "protection-pool-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+soroban-sdk = { version = "27.0.0", features = ["testutils"] }
+
+[dependencies.protection-pool]
+path = ".."
+features = ["testutils"]
+
+[[bin]]
+name = "fuzz_solvency"
+path = "fuzz_targets/fuzz_solvency.rs"
+test = false
+doc = false
+bench = false
