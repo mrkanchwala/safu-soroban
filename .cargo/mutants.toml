@@ -1,0 +1,54 @@
+# cargo-mutants configuration — documented equivalent-mutant exclusions.
+#
+# Added 2026-07-15 after the first full mutation run (464 mutants, 60
+# missed). 51 of the 60 are killed by targeted tests in
+# src/test/mutation_gap_tests.rs. The 9 excluded below are PROVABLY
+# EQUIVALENT: the mutated code has no observable behavioral difference
+# from the original under any reachable contract state. Each exclusion
+# carries its justification — do not add entries here without one.
+#
+# NOTE: patterns match cargo-mutants' mutant descriptions. They are
+# line-number-free on purpose (source-line drift safe) but therefore
+# scoped by function — if a function later gains a NEW mutation site
+# matching one of these patterns that is NOT equivalent, it would be
+# wrongly excluded. Re-review this file whenever the named functions
+# change.
+
+exclude_re = [
+    # lib.rs get_points_balance / is_eligible / is_claim_eligible:
+    # `r.amount > 0` → `>= 0`. Equivalent because amount == 0 with
+    # withdrawn == false is unreachable: stake() requires amount > 0;
+    # only withdraw()/emergency_exit() zero the amount and both set
+    # withdrawn = true in the same write; claim forfeiture sets
+    # withdrawn = true WITHOUT zeroing amount (activate_claim doc).
+    # With amount == 0 implying withdrawn == true, the `!withdrawn`
+    # conjunct already rejects every state the >= would newly admit.
+    "replace > with >= in ProtectionPool::get_points_balance",
+    "replace > with >= in ProtectionPool::is_eligible",
+    "replace > with >= in ProtectionPool::is_claim_eligible",
+
+    # claim.rs activate_claim / stake.rs withdraw: `if points > 0 {
+    # set_points_balance(banked + points) }` → `>=`. Equivalent: when
+    # points == 0 the mutant writes banked + 0 — the same value the
+    # original leaves in place (get_points_balance falls back to
+    # unwrap_or(0) for an absent entry, so entry-existence itself is
+    # not observable either).
+    "replace > with >= in activate_claim",
+    "replace > with >= in withdraw",
+
+    # stake.rs compute_points_for_record day-tier branches:
+    # `if d > 90/180/365 { d.min(...) - N } else { 0 }` → `>=`.
+    # Equivalent: at d == N the then-branch computes d.min(M) − N = 0,
+    # identical to the else-branch. Zero-width boundary. The `==` and
+    # arithmetic mutants at the same lines are NOT excluded — they are
+    # killed by points_formula_exact_values_at_all_day_tier_boundaries.
+    "replace > with >= in compute_points_for_record",
+
+    # stake.rs stake() re-stake guard (line 126 ONLY — the pool-cap
+    # check at line 134 also mutates `>`→`>=` but is catchable and IS
+    # tested; the line anchor keeps it in scope): `existing.amount > 0
+    # && !existing.withdrawn` → `>= 0`. Equivalent by the same
+    # amount==0 ⇒ withdrawn==true invariant as the lib.rs views above.
+    # LINE-NUMBER SENSITIVE: re-anchor if stake.rs lines shift.
+    "stake\\.rs:126:.*replace > with >= in stake",
+]

@@ -8,6 +8,7 @@
 mod admin_tests;
 mod claim_tests;
 mod common;
+mod mutation_gap_tests;
 mod override_tests;
 mod profiling_tests;
 mod solvency_tests;
