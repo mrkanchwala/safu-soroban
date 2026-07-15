@@ -175,7 +175,7 @@ pub fn stake(env: &Env, staker: &Address, amount: i128, beneficiary: &Address) {
 
     // Interaction — SAC transfer, staker to contract.
     let token = TokenClient::new(env, &xlm_token_address(env));
-    token.transfer(staker, &env.current_contract_address(), &amount);
+    token.transfer(staker, env.current_contract_address(), &amount);
 }
 
 /// V8 `setBeneficiary`: update the payout-receiving address before
