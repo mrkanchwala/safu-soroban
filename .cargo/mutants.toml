@@ -36,6 +36,17 @@ exclude_re = [
     "replace > with >= in activate_claim",
     "replace > with >= in withdraw",
 
+    # stake.rs compute_points_for_record entry guard: `record.amount <= 0
+    # || record.withdrawn` → `&&`. Equivalent because the guard is
+    # defensive-only — every reachable call site already excludes both
+    # conditions before calling: activate_claim is only invoked on
+    # non-withdrawn records with amount > 0 (submit_claim/unlock/override
+    # all check first), withdraw() panics on amount <= 0 before computing
+    # points, and lib.rs::get_points_balance guards amount > 0 &&
+    # !withdrawn itself. No public path reaches this function with either
+    # condition true, so weakening || to && is unobservable.
+    "replace \\|\\| with && in compute_points_for_record",
+
     # stake.rs compute_points_for_record day-tier branches:
     # `if d > 90/180/365 { d.min(...) - N } else { 0 }` → `>=`.
     # Equivalent: at d == N the then-branch computes d.min(M) − N = 0,
