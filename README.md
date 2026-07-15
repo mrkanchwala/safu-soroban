@@ -8,19 +8,25 @@ mechanics, ported wholesale from V8. Yield deployment (Lido wstETH on V8,
 DeFindex/Blend planned for Tranche 2) is deliberately excluded from this
 scope.
 
-**Status:** core mechanics complete and tested (121 unit tests passing),
-compiles to WASM (`cargo build --release --target wasm32v1-none`),
-**not yet deployed anywhere** — deployment is gated on a final audit
-sign-off and resolving one open item with the SCF team (see below).
+**Status:** core mechanics complete and tested (157 unit tests, 96.65%
+line coverage, 100% of catchable mutants killed — see `TESTING.md` for
+the full methodology), compiles to WASM
+(`cargo build --release --target wasm32v1-none`), `/audit-chain` +
+`/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM — see `audits/`),
+**not yet deployed anywhere** — deployment is gated on resolving one
+open item with the SCF team (see below).
 
 ## Building
 
 ```bash
 cargo check --package protection-pool          # fast type/logic check
-cargo test --package protection-pool           # 121 unit tests
+cargo test --package protection-pool           # 157 unit tests
 cargo build --package protection-pool --release --target wasm32v1-none
 stellar contract build --optimize              # or: stellar contract optimize --wasm <path>
 ```
+
+Full testing methodology (coverage, mutation testing, fuzzing, static
+analysis, manual audit passes, security reviews): see `TESTING.md`.
 
 Requires: `rustc`/`cargo`, the `wasm32v1-none` target
 (`rustup target add wasm32v1-none`), and `stellar-cli`
@@ -58,17 +64,21 @@ cap math + a token transfer) in one call.
 ```bash
 cd contracts/protection-pool
 cargo +nightly fuzz run fuzz_solvency -- -max_total_time=60
+cargo +nightly fuzz run fuzz_override -- -max_total_time=60
 ```
 
-Requires nightly Rust (`rustup toolchain install nightly`) and
-`cargo-fuzz` (`cargo install cargo-fuzz`). **On macOS (Apple Silicon),
-this currently crashes at libFuzzer's own startup** (`flockfile`/
-`vfprintf`, before any fuzz iteration runs) — a host ASan/libc
-incompatibility confirmed unrelated to this contract. Use
-`Dockerfile.fuzz` instead: `docker build -f Dockerfile.fuzz -t
-safu-fuzz . && docker run --rm safu-fuzz`. Verified working in that
-container 2026-07-14: 4270 runs in 61s, zero crashes, zero solvency-
-invariant violations.
+Two targets — `fuzz_solvency` (the core invariant) and `fuzz_override`
+(the 2-of-2 admin+coSigner escape hatch). Requires nightly Rust
+(`rustup toolchain install nightly`) and `cargo-fuzz`
+(`cargo install cargo-fuzz`). **On macOS (Apple Silicon), this currently
+crashes at libFuzzer's own startup** (`flockfile`/`vfprintf`, before any
+fuzz iteration runs) — a host ASan/libc incompatibility confirmed
+unrelated to this contract. Two working options: `Dockerfile.fuzz`
+(`docker build -f Dockerfile.fuzz -t safu-fuzz . && docker run --rm
+safu-fuzz`), or run natively on any Linux host (no Docker needed there —
+the incompatibility is macOS-specific). Combined results across both
+environments and targets: **114,344 runs, zero crashes, zero
+solvency-invariant violations.** Full breakdown: `TESTING.md` §4.
 
 ### Deploy-time arguments
 
@@ -189,8 +199,11 @@ pub enum DataKey {
   read as meaning the actual mechanic, not the grant text's simplified
   description). Not yet raised with the SCF team.
 - **No Halmos-equivalent exists for Soroban.** The solvency invariant and
-  claim state machine rest on test coverage (121 unit tests) and the
-  `fuzz/` targets rather than symbolic proof.
+  claim state machine rest on test coverage (157 unit tests, 100% of
+  catchable mutants killed) and 114,344 fuzz runs across two targets and
+  two environments, rather than symbolic proof — see `TESTING.md` for
+  the full methodology. Certora Sunbeam (the real ecosystem tool) is
+  deliberately deferred to Tranche 3's SCF-funded audit.
 - **`cancel_pending_override`'s mechanics were re-verified against V8
   directly** (was previously an unconfirmed guess) — see `src/claim.rs`
   module doc comment for the full account of what was wrong and what was
