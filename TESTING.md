@@ -33,7 +33,7 @@ Split by mechanic in `src/test/`:
 
 16 pre-existing tests were updated for the new approval-gated flow (the gate no longer auto-activates a claim); none were weakened — 2 of the 16 had been silently pinning bugs as "expected" values, corrected with the bug fix rather than left inconsistent.
 
-## 2. Coverage — 96.38% line / 97.53% region / 95.69% function (re-measured 2026-07-22)
+## 2. Coverage — 97.47% line / 98.46% region / 95.69% function (re-measured 2026-07-22, after the mutation-testing gap-closure tests)
 
 ```bash
 cargo llvm-cov --package protection-pool --summary-only
@@ -41,7 +41,7 @@ cargo llvm-cov --package protection-pool --summary-only
 
 | File | Line % | Notes |
 |---|---|---|
-| `admin.rs` | 85.94% | dipped from 98.18% — new suspend/unsuspend clock-reset branches added 2026-07-22, not yet fully covered by a dedicated per-branch test |
+| `admin.rs` | 96.09% | recovered from an interim 85.94% dip — the 2 new `unsuspend_stake` tests added while closing mutation-testing gaps (Rule A/Rule B clock-reset paths) closed almost all of it |
 | `claim.rs` | 98.28% | largest file — claim lifecycle + override flow + the new approval/expiry functions |
 | `lib.rs` | 98.45% | thin entrypoint wrappers |
 | `stake.rs` | 94.55% | |
@@ -49,7 +49,7 @@ cargo llvm-cov --package protection-pool --summary-only
 | `test/common.rs` | 100% | shared test setup |
 | `types.rs` | 0% | pure data/const declarations, no branches to cover |
 
-Overall coverage held essentially flat despite substantial new logic (function coverage actually improved, 93.64% → 95.69%) — the one file below its prior number, `admin.rs`, is flagged honestly rather than smoothed over.
+Overall coverage improved on the prior 96.38%/93.64%(function) figures — the 5 tests added to close mutation-testing gaps landed real assertions on previously-thin branches, not just incidental coverage.
 
 Industry guidance (checked 2026-07-15 against current smart-contract QA
 practice) targets ≥90% line coverage with ≥95% on fund-handling code
@@ -97,13 +97,32 @@ confirmed equivalent (defensive-only guard, no reachable call site
 violates it), and added as the 10th exclusion. **Result: 100% of
 catchable mutants killed.**
 
-**Not re-run against the 2026-07-22 changes.** `cargo mutants --workspace`
-takes long enough that it wasn't re-run this pass — the 100% figure above
-applies to the code as it stood on 2026-07-15, not to the new
-`approve_claim`/`expire_pending_approval`/`expire_stale_claim` functions
-or the 5 bug fixes added since. Flagged honestly as a gap, not silently
-carried forward as if it still covers the new surface. Recommended before
-this report is treated as fully current.
+**Re-run against the 2026-07-22 changes, same day (second data point):**
+485 mutants — 461 caught, 10 missed, 14 unviable (97.9%). All 10 misses
+were in the new `approve_claim`/`expire_pending_approval`/
+`expire_stale_claim` functions and the suspend/unsuspend fairness fixes —
+nothing pre-existing regressed. Triaged individually, same method as the
+2026-07-15 baseline:
+- **9 were real test gaps** — closed with 5 new targeted tests across
+  `admin_tests.rs`, `claim_tests.rs`, and `override_tests.rs`: a wallet-
+  ownership-check inversion, both deleted Rule A/Rule B clock-reset match
+  arms, the deadline-arithmetic and burn-sum-arithmetic mutants (the
+  latter required reading the `ClaimApproved` event's `points_burned`
+  field directly via XDR decode, since storage is unconditionally zeroed
+  regardless of the sum's correctness — no test can observe it any other
+  way), the approval-window exact-boundary case, and the override-release
+  skip for `AwaitingApproval`/`PendingTime` claims.
+- **1 was provably equivalent** (`get_points_balance`'s `&&`→`||`) — full
+  reachable-state truth-table walk: the only state where the two
+  conditions diverge (`amount>0`, `withdrawn=true`, reachable since this
+  session's claim-forfeiture path) still forces the identical return
+  value (0) via `compute_points_for_record`'s own independent `withdrawn`
+  guard plus the burn's unconditional zero-out. Added as the 11th
+  `.cargo/mutants.toml` exclusion.
+
+**Final rerun (2026-07-22):** 484 mutants (post-exclusion) — **470
+caught, 0 missed, 14 unviable. Result: 100% of catchable mutants killed,
+confirmed against the current code, not carried forward stale.**
 
 ## 4. Fuzzing — 2 targets, 2 independent environments, 53,588+37,943 runs
 

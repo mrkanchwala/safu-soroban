@@ -8,10 +8,10 @@ mechanics, ported wholesale from V8. Yield deployment (Lido wstETH on V8,
 DeFindex/Blend planned for Tranche 2) is deliberately excluded from this
 scope.
 
-**Status:** core mechanics complete and tested (173 unit tests, 96.38%
-line coverage, 100% of catchable mutants killed as of 2026-07-15 — not
-yet re-run against the 2026-07-22 mechanism update, see `TESTING.md` for
-the full methodology), compiles to WASM
+**Status:** core mechanics complete and tested (178 unit tests, 97.47%
+line coverage, 100% of catchable mutants killed — both confirmed
+2026-07-22 against the current code, see `TESTING.md` for the full
+methodology), compiles to WASM
 (`cargo build --release --target wasm32v1-none`), `/audit-chain` +
 `/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM — see `audits/`),
 **not yet deployed anywhere** — deployment is gated on resolving one
@@ -203,9 +203,9 @@ pub enum DataKey {
   read as meaning the actual mechanic, not the grant text's simplified
   description). Not yet raised with the SCF team.
 - **No Halmos-equivalent exists for Soroban.** The solvency invariant and
-  claim state machine rest on test coverage (173 unit tests, 100% of
-  catchable mutants killed as of 2026-07-15 — mutation testing not yet
-  re-run against the 2026-07-22 mechanism update) and 133,672 fuzz runs
+  claim state machine rest on test coverage (178 unit tests, 97.47% line
+  coverage, 100% of catchable mutants killed — confirmed 2026-07-22
+  against the current code) and 133,672 fuzz runs
   across two targets and multiple environments, rather than symbolic
   proof — see `TESTING.md` for the full methodology. Certora Sunbeam (the
   real ecosystem tool) is deliberately deferred to Tranche 3's SCF-funded
