@@ -164,7 +164,7 @@ pub fn stake(env: &Env, staker: &Address, amount: i128, beneficiary: &Address) {
         penalty_locked_until_ledger: 0,
         withdrawn: false,
         suspended: false,
-        claim_active: false,
+        active_claim_id: None,
     };
     storage::set_stake(env, staker, &record);
     storage::set_total_staked(env, total_staked + amount);
@@ -222,7 +222,7 @@ pub fn withdraw(env: &Env, staker: &Address, beneficiary: &Address) {
     if record.withdrawn {
         panic!("SAFU: already withdrawn");
     }
-    if record.claim_active {
+    if record.active_claim_id.is_some() {
         panic!("SAFU: claim active");
     }
     let now = env.ledger().sequence();
@@ -276,7 +276,7 @@ pub fn emergency_exit(env: &Env, staker: &Address) {
     if record.amount <= 0 || record.withdrawn {
         panic!("SAFU: no active stake");
     }
-    if record.claim_active {
+    if record.active_claim_id.is_some() {
         panic!("SAFU: claim active");
     }
 

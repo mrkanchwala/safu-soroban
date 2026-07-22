@@ -228,7 +228,7 @@ fn unsuspend_stake_restores_claim_eligibility() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     s.client.suspend_stake(&staker);
-    s.client.unsuspend_stake(&staker);
+    s.client.unsuspend_stake(&staker, &None);
     s.client.submit_claim(
         &s.oracle,
         &staker,

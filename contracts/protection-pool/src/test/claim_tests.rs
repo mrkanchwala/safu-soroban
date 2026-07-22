@@ -34,7 +34,11 @@ fn submit_claim_by_oracle_pending_when_gate_not_met() {
 }
 
 #[test]
-fn submit_claim_activates_immediately_when_gate_met() {
+fn submit_claim_awaiting_approval_when_gate_already_met() {
+    // CHANGED 2026-07-22: meeting the gate at submission time no longer
+    // auto-activates (forfeits/burns/starts cooldown) — it lands in
+    // AwaitingApproval with a deadline set, and the staker must actively
+    // call approve_claim (Rule A) before anything is forfeited.
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
@@ -48,10 +52,233 @@ fn submit_claim_activates_immediately_when_gate_met() {
         &now_ts(&env),
     );
     let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::AwaitingApproval);
+    assert!(claim.approve_deadline_ledger > 0);
+    // Nothing forfeited yet — total_staked/stakers unchanged.
+    assert_eq!(s.client.get_total_staked(), MID_STAKE);
+    assert_eq!(s.client.get_total_stakers(), 1);
+}
+
+#[test]
+fn approve_claim_forfeits_and_activates() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    s.client.approve_claim(&claim_id);
+    let claim = s.client.get_claim(&claim_id).unwrap();
     assert_eq!(claim.status, ClaimStatus::Active);
-    // Stake forfeited in the same call.
     assert_eq!(s.client.get_total_staked(), 0);
     assert_eq!(s.client.get_total_stakers(), 0);
+    // Rule B's clock anchors at cooldown end, not the approval ledger.
+    assert_eq!(claim.last_collected_ledger, claim.cooldown_ends_ledger);
+}
+
+#[test]
+fn approve_claim_burns_entire_lifetime_points_balance() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    // First cycle: withdraw before ever claiming, banking points into the
+    // wallet's lifetime balance.
+    s.client.withdraw(&staker, &ben);
+    let banked_from_cycle_1 = s.client.get_points_balance(&staker);
+    assert!(banked_from_cycle_1 > 0);
+
+    // Second cycle: stake again, get hacked, approve — should burn BOTH
+    // this cycle's points AND the banked balance from cycle 1. withdraw()
+    // sent the first cycle's principal to `ben` (the beneficiary), not
+    // back to `staker` — needs fresh funding to stake again.
+    s.token_admin.mint(&staker, &MID_STAKE);
+    s.client.stake(&staker, &MID_STAKE, &ben);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    s.client.approve_claim(&claim_id);
+    assert_eq!(s.client.get_points_balance(&staker), 0);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: claim not awaiting approval")]
+fn approve_claim_before_gate_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    // Still PendingTime — gate not met, never transitioned to AwaitingApproval.
+    s.client.approve_claim(&claim_id);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: approval window expired")]
+fn approve_claim_after_100_days_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    advance_days(&env, 101);
+    s.client.approve_claim(&claim_id);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: stake suspended")]
+fn approve_claim_while_suspended_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    s.client.suspend_stake(&staker);
+    s.client.approve_claim(&claim_id);
+}
+
+// -----------------------------------------------------------------------
+// expire_pending_approval — Rule A sweep
+// -----------------------------------------------------------------------
+
+#[test]
+fn expire_pending_approval_releases_reservation() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    advance_days(&env, 101);
+    s.client.expire_pending_approval(&claim_id);
+
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Expired);
+    assert_eq!(s.client.get_total_allocated(), 0);
+    // Nothing was ever forfeited — stake is untouched and withdrawable.
+    s.client.withdraw(&staker, &ben);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: approval window not yet expired")]
+fn expire_pending_approval_before_deadline_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    advance_days(&env, 99);
+    s.client.expire_pending_approval(&claim_id);
+}
+
+// -----------------------------------------------------------------------
+// expire_stale_claim — Rule B sweep
+// -----------------------------------------------------------------------
+
+#[test]
+fn expire_stale_claim_after_100_days_inactivity_releases_remainder() {
+    let env = new_env();
+    let s = setup(&env);
+    let entitlement = 4_500_000i128;
+    let (_staker, ben, claim_id) = active_claim_with_entitlement(&env, &s, entitlement);
+    advance_days(&env, 7); // cooldown passes
+    advance_days(&env, 10); // partial vesting
+    let transferred = s.client.claim_stream(&claim_id, &ben);
+    assert!(transferred > 0);
+
+    advance_days(&env, 101); // 100+ days with zero further activity
+    s.client.expire_stale_claim(&claim_id);
+
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Expired);
+    assert_eq!(s.client.get_total_allocated(), 0);
+}
+
+#[test]
+fn expire_stale_claim_zero_streamed_case() {
+    let env = new_env();
+    let s = setup(&env);
+    let entitlement = 4_500_000i128;
+    let (_staker, _ben, claim_id) = active_claim_with_entitlement(&env, &s, entitlement);
+    // Never called claim_stream even once.
+    advance_days(&env, 7 + 101);
+    s.client.expire_stale_claim(&claim_id);
+    assert_eq!(s.client.get_total_allocated(), 0);
+}
+
+#[test]
+#[should_panic(expected = "SAFU: claim not yet stale")]
+fn expire_stale_claim_before_100_days_panics() {
+    let env = new_env();
+    let s = setup(&env);
+    let entitlement = 4_500_000i128;
+    let (_staker, ben, claim_id) = active_claim_with_entitlement(&env, &s, entitlement);
+    advance_days(&env, 7);
+    advance_days(&env, 10);
+    s.client.claim_stream(&claim_id, &ben);
+    advance_days(&env, 99); // resets from the collection above, not yet stale
+    s.client.expire_stale_claim(&claim_id);
+}
+
+#[test]
+fn claim_stream_resets_rule_b_clock() {
+    let env = new_env();
+    let s = setup(&env);
+    let entitlement = 4_500_000i128;
+    let (_staker, ben, claim_id) = active_claim_with_entitlement(&env, &s, entitlement);
+    advance_days(&env, 7);
+    advance_days(&env, 10);
+    s.client.claim_stream(&claim_id, &ben);
+    // Without the reset, 90 more days here plus the prior gap would trip
+    // Rule B — collecting again proves the clock genuinely moved forward.
+    advance_days(&env, 90);
+    let transferred = s.client.claim_stream(&claim_id, &ben);
+    assert!(transferred > 0);
 }
 
 #[test]
@@ -458,7 +685,10 @@ fn submit_claim_blocked_while_paused() {
 // -----------------------------------------------------------------------
 
 #[test]
-fn unlock_pending_claim_activates_after_gate() {
+fn unlock_pending_claim_moves_to_awaiting_approval_after_gate() {
+    // CHANGED 2026-07-22: unlock_pending_claim no longer activates
+    // directly — like submit_claim's gate-met branch, it now lands in
+    // AwaitingApproval, still gated on the staker's own approve_claim.
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
@@ -472,6 +702,13 @@ fn unlock_pending_claim_activates_after_gate() {
     );
     advance_days(&env, 90);
     s.client.unlock_pending_claim(&claim_id);
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::AwaitingApproval);
+    assert!(claim.approve_deadline_ledger > 0);
+    assert_eq!(s.client.get_total_staked(), MID_STAKE);
+
+    // And approving from here works exactly like the submit_claim path.
+    s.client.approve_claim(&claim_id);
     let claim = s.client.get_claim(&claim_id).unwrap();
     assert_eq!(claim.status, ClaimStatus::Active);
     assert_eq!(s.client.get_total_staked(), 0);
@@ -525,13 +762,19 @@ fn unlock_pending_claim_nonexistent_panics() {
 // claim_stream
 // -----------------------------------------------------------------------
 
+/// CHANGED 2026-07-22 (points burn-on-claim mechanism): meeting the gate
+/// no longer auto-activates — it lands in AwaitingApproval, and the
+/// staker must call `approve_claim` themselves (Rule A) before the stake
+/// forfeits and cooldown/vesting starts. Added that call here so every
+/// test using this helper still gets a genuinely Active claim, same as
+/// before the mechanism change.
 fn active_claim_with_entitlement(
     env: &soroban_sdk::Env,
     s: &Setup<'_>,
     entitlement: i128,
 ) -> (Address, Address, soroban_sdk::BytesN<32>) {
     let (staker, ben) = staked_wallet(env, s);
-    advance_days(env, 90); // gate met, activates immediately on submit
+    advance_days(env, 90); // gate met, lands in AwaitingApproval on submit
     let claim_id = s.client.submit_claim(
         &s.oracle,
         &staker,
@@ -540,6 +783,7 @@ fn active_claim_with_entitlement(
         &TIER_C,
         &now_ts(env),
     );
+    s.client.approve_claim(&claim_id);
     (staker, ben, claim_id)
 }
 
@@ -639,23 +883,44 @@ fn claim_stream_daily_outflow_cap_limits_large_payout() {
 #[test]
 #[should_panic(expected = "SAFU: daily outflow cap reached, try again tomorrow")]
 fn claim_stream_second_call_same_day_hits_cap() {
+    // CHANGED 2026-07-22 (bug 1 fix): entitlement bumped 300M -> 320M.
+    // Bug 1 used to leave total_allocated frozen at the full entitlement
+    // between calls (claim_stream never released its own transfer), so
+    // utilization never moved within a day. Now it does — 300M would
+    // drop utilization below the 20% band after the first 40.5M payout,
+    // bumping the rate to 500bps and leaving same-day headroom instead of
+    // hitting the cap (see claim_stream_next_day_cap_resets for that
+    // exact scenario). 320M keeps post-payout utilization just above 20%
+    // (279.5M / 1.35B ≈ 20.7%), so the rate stays at 300bps for the
+    // second same-day check and it genuinely has nothing left.
     let env = new_env();
     let s = setup(&env);
     let anchor_staker = new_funded_address(&env, &s, MAX_STAKE);
     let anchor_ben = Address::generate(&env);
     s.client.stake(&anchor_staker, &MAX_STAKE, &anchor_ben);
 
-    let entitlement = 300_000_000i128;
+    let entitlement = 320_000_000i128;
     let (_staker, ben, claim_id) = active_claim_with_entitlement(&env, &s, entitlement);
     advance_days(&env, 7);
     advance_days(&env, 45);
 
-    s.client.claim_stream(&claim_id, &ben); // drains the day's cap
-    s.client.claim_stream(&claim_id, &ben); // same day — nothing left
+    let first = s.client.claim_stream(&claim_id, &ben); // drains the day's cap
+    assert_eq!(first, 40_500_000);
+    s.client.claim_stream(&claim_id, &ben); // same day, same rate — nothing left
 }
 
 #[test]
 fn claim_stream_next_day_cap_resets() {
+    // CHANGED 2026-07-22 (bug 1 fix): `second` was 40,500,000 under the
+    // bug — total_allocated stayed frozen at the full 300M between calls,
+    // so utilization (and therefore the payout rate) never moved even
+    // though 40.5M had already left the pool. Fixed: total_allocated
+    // drops to 259.5M after the first payout, utilization falls to
+    // ~19.2% (below the 20% band), and the rate correctly jumps to
+    // 500bps (5%) on the new day — cap = 1.35B × 500/10_000 = 67.5M, and
+    // claimable (259.5M remaining) comfortably covers it. This is the
+    // fix working as intended: the pool pays out FASTER as it de-stresses,
+    // not throttled forever by phantom allocation that was already paid.
     let env = new_env();
     let s = setup(&env);
     let anchor_staker = new_funded_address(&env, &s, MAX_STAKE);
@@ -671,7 +936,7 @@ fn claim_stream_next_day_cap_resets() {
     advance_days(&env, 1);
     let second = s.client.claim_stream(&claim_id, &ben);
     assert_eq!(first, 40_500_000);
-    assert_eq!(second, 40_500_000); // fresh daily budget, same rate
+    assert_eq!(second, 67_500_000); // rate improved to 500bps as utilization fell
 }
 
 // -----------------------------------------------------------------------

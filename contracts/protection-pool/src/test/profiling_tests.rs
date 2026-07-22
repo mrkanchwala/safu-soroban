@@ -69,7 +69,9 @@ fn profile_submit_claim() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    advance_days(&env, 90); // gate met, exercises the immediate-activation path
+    // Gate met — exercises the AwaitingApproval branch (2026-07-22:
+    // no longer immediate activation, see approve_claim for that cost).
+    advance_days(&env, 90);
 
     env.cost_estimate().budget().reset_default();
     s.client.submit_claim(
@@ -80,7 +82,7 @@ fn profile_submit_claim() {
         &3,
         &now_ts(&env),
     );
-    print_budget(&env, "submit_claim (gate met, immediate activation)");
+    print_budget(&env, "submit_claim (gate met, lands in AwaitingApproval)");
 
     assert!(env.cost_estimate().budget().cpu_instruction_cost() < 50_000_000);
 }
@@ -100,6 +102,10 @@ fn profile_claim_stream() {
         &3,
         &now_ts(&env),
     );
+    // CHANGED 2026-07-22: gate-met no longer auto-activates — lands in
+    // AwaitingApproval, needs an explicit approve_claim before cooldown/
+    // vesting starts.
+    s.client.approve_claim(&claim_id);
     advance_days(&env, 7);
     advance_days(&env, 10);
 

@@ -272,6 +272,19 @@ fn claim_stream_second_call_pays_exactly_the_delta() {
 /// Cancelling a partially-streamed claim releases EXACTLY the unstreamed
 /// remainder from total_allocated.
 /// Kills claim.rs:450:40 (−→+ in unstreamed).
+///
+/// CHANGED 2026-07-22 (bug 1 fix): the old expected value here (1,000,000)
+/// was pinning the BUG — claim_stream never used to release its own
+/// transferred amount from total_allocated, so the streamed 1M sat there
+/// forever as phantom allocation even after cancel released the
+/// remaining 3.5M. Now claim_stream releases its own transfer as it
+/// happens, so total_allocated is already down to 3.5M by the time
+/// cancel_claim runs; cancel then correctly releases that same 3.5M
+/// (`entitlement - streamed`, unchanged formula, now operating on an
+/// already-accurate total_allocated instead of an inflated one) —
+/// ending at exactly 0, not 1,000,000. Kill-coverage for the `−→+`
+/// mutant is unaffected: the formula itself didn't change, only what it
+/// was released FROM did.
 #[test]
 fn cancel_partially_streamed_claim_releases_exact_remainder() {
     let env = new_env();
@@ -283,9 +296,11 @@ fn cancel_partially_streamed_claim_releases_exact_remainder() {
     advance_days(&env, 7);
     advance_days(&env, 10);
     assert_eq!(s.client.claim_stream(&claim_id, &ben), 1_000_000);
+    assert_eq!(s.client.get_total_allocated(), 3_500_000); // bug 1: released as-streamed
     s.client.cancel_claim(&claim_id);
-    // 4.5M allocated − 3.5M unstreamed released = 1M (streamed portion).
-    assert_eq!(s.client.get_total_allocated(), 1_000_000);
+    // Cancel releases the remaining 3.5M reserved for this claim — nothing
+    // left allocated for it at all.
+    assert_eq!(s.client.get_total_allocated(), 0);
 }
 
 // -----------------------------------------------------------------------
@@ -304,8 +319,9 @@ fn outflow_rate_drops_at_exactly_20_percent_utilization() {
     s.client.stake(&anchor, &MAX_STAKE, &anchor_ben);
     let (staker, ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    // Activates immediately; snapshot (cap base) = 1.35B.
-    // 270M / 1.35B = exactly 2000 bps → 300 bps → cap 40.5M.
+    // Lands in AwaitingApproval; approve_claim (same ledger, so the
+    // snapshot math below is unaffected) takes the snapshot (cap base) =
+    // 1.35B. 270M / 1.35B = exactly 2000 bps → 300 bps → cap 40.5M.
     let claim_id = s.client.submit_claim(
         &s.oracle,
         &staker,
@@ -314,6 +330,7 @@ fn outflow_rate_drops_at_exactly_20_percent_utilization() {
         &TIER_C,
         &now_ts(&env),
     );
+    s.client.approve_claim(&claim_id);
     advance_days(&env, 7);
     advance_days(&env, 45); // fully vested
     assert_eq!(s.client.claim_stream(&claim_id, &ben), 40_500_000);
@@ -401,6 +418,17 @@ fn override_after_cancel_does_not_touch_other_reservations() {
 /// Re-execution after a partial stream: release is exactly
 /// entitlement − streamed, then the new entitlement re-adds in full.
 /// Kills claim.rs:579:44 (−→+) and 581:64 (−→+, −→/).
+///
+/// CHANGED 2026-07-22 (bugs 1 + 3 fixes): old expected value (5,500,000)
+/// was pinning TWO bugs at once — bug 1 (claim_stream never released its
+/// own transfer, so total_allocated was still 4.5M going into the
+/// re-execution instead of the correct 3.5M) and bug 3 (the re-executed
+/// claim's `streamed` was hard-reset to 0, letting the beneficiary
+/// re-collect the FULL new entitlement on top of the 1M already paid —
+/// an overpayment). Both fixed: total_allocated is 3.5M before
+/// re-execution, releases 3.5M (→0), re-adds 4.5M (→4.5M) — and the new
+/// claim record carries `streamed = 1,000,000` forward, so only 3.5M is
+/// actually still collectible, not another full 4.5M.
 #[test]
 fn override_reexecution_after_partial_stream_exact_release_math() {
     let env = new_env();
@@ -412,10 +440,15 @@ fn override_reexecution_after_partial_stream_exact_release_math() {
     advance_days(&env, 7);
     advance_days(&env, 10);
     assert_eq!(s.client.claim_stream(&claim_id, &ben), 1_000_000);
-    // Re-execute same params: release 4.5M−1M=3.5M (allocated → 1M),
-    // then re-add 4.5M → exactly 5.5M.
+    assert_eq!(s.client.get_total_allocated(), 3_500_000); // bug 1: already net of the 1M paid
+    // Re-execute same params: release the current 3.5M (→0), re-add the
+    // full 4.5M entitlement (→4.5M) — not 5.5M.
     do_override(&env, &s, &staker, &hash, 4_500_000, TIER_C);
-    assert_eq!(s.client.get_total_allocated(), 5_500_000);
+    assert_eq!(s.client.get_total_allocated(), 4_500_000);
+    // Bug 3 regression: streamed carried forward, not reset to 0 — the
+    // beneficiary can only collect the remaining 3.5M, not another 4.5M.
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.streamed, 1_000_000);
 }
 
 /// An override entitlement EXACTLY at the tier cap AND exactly at the
@@ -434,6 +467,81 @@ fn override_exact_tier_cap_and_solvency_fill_succeeds() {
     // is exactly AT the tier cap and exactly fills solvency.
     do_override(&env, &s, &wa, &tx_hash(&env, 1), 500_000_000, TIER_C);
     assert_eq!(s.client.get_total_allocated(), 500_000_000);
+}
+
+/// Bug 2 regression (eng review 2026-07-22): execute_override must not be
+/// able to create a second, independently-payable claim on a wallet that
+/// already has one in flight under a different tx_hash — the old code had
+/// no equivalent to submit_claim's claim_active guard.
+#[test]
+#[should_panic(expected = "SAFU: wallet already has a different active claim")]
+fn override_blocks_second_claim_on_wallet_with_existing_claim() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    // Wallet already has a live claim (PendingTime — gate not met).
+    s.client
+        .submit_claim(&s.oracle, &staker, &tx_hash(&env, 1), &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    // A DIFFERENT tx_hash for the SAME wallet via override must be
+    // refused — without the fix, this would create a second, independently
+    // payable claim against the same forfeited stake.
+    do_override(&env, &s, &staker, &tx_hash(&env, 2), ENTITLEMENT, TIER_C);
+}
+
+/// Bug 4 regression (eng review 2026-07-22): the daily-outflow-cap
+/// subtraction must clamp, not panic, when the recomputed cap ends up
+/// BELOW what's already been paid out that day — the scenario the old
+/// `.max(0)`-after-subtract pattern could never actually protect against
+/// (the subtraction itself panicked first, under this workspace's
+/// `overflow-checks = true`). Forces exactly that: staker A collects
+/// while utilization is low (cheap 500bps rate), then a same-day override
+/// on a different wallet spikes utilization past 50%, shrinking the
+/// recomputed cap below what A already collected today. A's next call
+/// must fail with the graceful message, not a raw arithmetic panic.
+#[test]
+#[should_panic(expected = "SAFU: daily outflow cap reached, try again tomorrow")]
+fn claim_stream_cap_shrinking_mid_day_fails_gracefully_not_via_panic() {
+    let env = new_env();
+    let s = setup(&env);
+    let anchor = new_funded_address(&env, &s, MAX_STAKE);
+    let anchor_ben = Address::generate(&env);
+    s.client.stake(&anchor, &MAX_STAKE, &anchor_ben);
+
+    let (staker_a, ben_a) = staked_wallet(&env, &s); // MID_STAKE = 100M
+    advance_days(&env, 90); // gate met
+    let claim_a = s.client.submit_claim(
+        &s.oracle,
+        &staker_a,
+        &tx_hash(&env, 1),
+        &100_000_000, // TIER_B cap = 100M*10 = 1B, plenty of room
+        &TIER_B,
+        &now_ts(&env),
+    );
+    s.client.approve_claim(&claim_a);
+    advance_days(&env, 7); // cooldown
+    advance_days(&env, 45); // full vesting
+
+    // cap_base_a snapshot = anchor + A = 1.35B. Utilization = 100M/1.35B
+    // ≈ 7.4% (<20%) → 500bps → cap = 67.5M. Fully vested, so this drains
+    // the day's cap in one call.
+    let first = s.client.claim_stream(&claim_a, &ben_a);
+    assert_eq!(first, 67_500_000);
+
+    // Same day: a second, much larger wallet gets an overridden claim —
+    // spikes pool-wide total_allocated, and its own stake also raises
+    // total_staked (which cap_base_a tracks via `max(total_staked_now,
+    // snapshot)`), pushing utilization for A's own rate past 50%.
+    let staker_b = new_funded_address(&env, &s, 200_000_000);
+    let ben_b = Address::generate(&env);
+    s.client.stake(&staker_b, &200_000_000, &ben_b);
+    do_override(&env, &s, &staker_b, &tx_hash(&env, 2), 700_000_000, TIER_B);
+
+    // A's second call, same real day: recomputed cap (100bps of the new,
+    // larger cap_base) is now BELOW the 67.5M already paid today. Old
+    // code: `(cap - daily_outflow_so_far)` panics with a raw overflow
+    // trap. Fixed code: saturating_sub clamps to 0, and the transfer
+    // amount check produces the intended, graceful message instead.
+    s.client.claim_stream(&claim_a, &ben_a);
 }
 
 // -----------------------------------------------------------------------
@@ -564,6 +672,10 @@ fn penalty_lock_still_active_after_two_days() {
         &TIER_C,
         &now_ts(&env),
     );
+    // CHANGED 2026-07-22: gate-met no longer auto-activates — the claim
+    // must be explicitly approved before cancelling it exercises the
+    // "was Active" penalty-lock branch this test is pinning.
+    s.client.approve_claim(&claim_id);
     s.client.cancel_claim(&claim_id); // restores stake + penalty lock
     advance_days(&env, 2);
     s.client.withdraw(&staker, &ben);

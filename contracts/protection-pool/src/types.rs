@@ -39,6 +39,27 @@ pub const VESTING_LEDGERS: u32 = 45 * LEDGERS_PER_DAY;
 /// a genuine paid claim (that forfeiture is permanent — do not conflate).
 pub const PENALTY_LOCK_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 
+/// Points burn-on-claim mechanism (locked 2026-07-22, task plan
+/// `outputs/2026-07-22_task-plan-safu-points-burn-mechanism.md`, eng review
+/// `outputs/2026-07-22_plan-eng-review-safu-points-burn-mechanism.md`).
+///
+/// Rule A: once a claim's 90-day time gate is met, the staker has this long
+/// to actively call `approve_claim` (which burns their full lifetime points
+/// balance and starts forfeiture/cooldown/vesting) before the reservation
+/// expires back to the pool via the permissionless `expire_pending_approval`.
+pub const APPROVE_WINDOW_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
+/// Rule B: once approved and streaming, a single rolling inactivity clock
+/// per claim (not per-day-siloed — the vesting model is one continuous
+/// running total, so per-day tracking would need new data; a rolling
+/// clock resetting on every `claim_stream` call is the simpler, correct
+/// choice, per the eng review). If a claim goes this long with zero
+/// `claim_stream` activity, whatever remains uncollected sweeps back to
+/// the pool via the permissionless `expire_stale_claim`. Anchored at
+/// `cooldown_ends_ledger` on approval, never at the approval moment itself
+/// — the 7-day mandatory cooldown must never count as staker inactivity
+/// (eng review blocker #2).
+pub const COLLECTION_INACTIVITY_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
+
 // -----------------------------------------------------------------------
 // Stake bounds — dynamic, as basis points of the configurable pool cap,
 // not fixed amounts. Decided 2026-07-14 (user): V8's fixed ETH bounds
@@ -95,6 +116,20 @@ pub enum ClaimStatus {
     Cancelled = 3,
     Reserved = 4,
     PendingTime = 5,
+    /// NEW 2026-07-22 (Rule A): 90-day gate met, reservation live, nothing
+    /// forfeited yet — waiting on the staker's own `approve_claim` call
+    /// within `APPROVE_WINDOW_LEDGERS`. Replaces the old behavior where
+    /// meeting the time gate auto-forfeited the stake with no staker
+    /// action required.
+    AwaitingApproval = 6,
+    /// NEW 2026-07-22: terminal state for a reservation that lapsed
+    /// without staker action — either Rule A (never approved in time) or
+    /// Rule B (approved, then went inactive too long during collection).
+    /// Same downstream handling either way: release whatever's still
+    /// reserved, stop further action. Distinct from `Cancelled`, which
+    /// implies an admin false-positive judgment call and its associated
+    /// penalty-lock logic — an expiry is neither party's fault.
+    Expired = 7,
 }
 
 // -----------------------------------------------------------------------
@@ -122,8 +157,15 @@ pub struct StakeRecord {
     pub withdrawn: bool,
     /// Admin can block payout eligibility; does NOT block principal withdrawal.
     pub suspended: bool,
-    /// True while a claim is open against this stake; blocks withdrawal.
-    pub claim_active: bool,
+    /// CHANGED 2026-07-22 (eng review, bug 2 fix): was a bare `claim_active:
+    /// bool`. A bool alone can't distinguish "re-executing/correcting THIS
+    /// SAME claim" from "wallet already has a DIFFERENT claim in flight" —
+    /// `execute_override` needs that distinction to enforce the one-wallet-
+    /// one-claim invariant, which a bool structurally cannot express.
+    /// `Some(claim_id)` while any claim is open against this stake (blocks
+    /// withdrawal, same as the old bool); `None` once terminal
+    /// (Completed/Cancelled/Expired) or never claimed.
+    pub active_claim_id: Option<BytesN<32>>,
 }
 
 // -----------------------------------------------------------------------
@@ -161,6 +203,18 @@ pub struct Claim {
     /// verdict — never re-derivable/forgeable client-side.
     pub tier: u32,
     pub status: ClaimStatus,
+    /// NEW 2026-07-22 (Rule A): set when entering `AwaitingApproval`
+    /// (`now + APPROVE_WINDOW_LEDGERS`). Checked by both `approve_claim`
+    /// (must call before this) and the permissionless `expire_pending_approval`
+    /// (may sweep after this). Unused (0) before that state is reached.
+    pub approve_deadline_ledger: u32,
+    /// NEW 2026-07-22 (Rule B): set to `cooldown_ends_ledger` — not the
+    /// approval ledger — the moment a claim activates (eng review blocker
+    /// #2: the mandatory 7-day cooldown must never count as staker
+    /// inactivity). Updated to `now` on every successful `claim_stream`.
+    /// Checked by the permissionless `expire_stale_claim`. Unused (0)
+    /// before activation.
+    pub last_collected_ledger: u32,
 }
 
 // -----------------------------------------------------------------------

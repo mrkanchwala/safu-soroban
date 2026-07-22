@@ -38,9 +38,10 @@ use soroban_sdk::xdr::ToXdr;
 use crate::stake;
 use crate::storage;
 use crate::types::{
-    Claim, ClaimStatus, OverrideRequest, StakeRecord, BPS_DENOMINATOR, CLAIM_WINDOW_SECONDS,
-    COOLDOWN_LEDGERS, PENALTY_LOCK_LEDGERS, TIER_A_RATIO, TIER_B_RATIO, TIER_C_RATIO,
-    TIER_BPS_DENOMINATOR, TIER_COVERAGE_BPS, TIME_GATE_LEDGERS, VESTING_LEDGERS,
+    Claim, ClaimStatus, OverrideRequest, StakeRecord, APPROVE_WINDOW_LEDGERS, BPS_DENOMINATOR,
+    CLAIM_WINDOW_SECONDS, COLLECTION_INACTIVITY_LEDGERS, COOLDOWN_LEDGERS, PENALTY_LOCK_LEDGERS,
+    TIER_A_RATIO, TIER_B_RATIO, TIER_C_RATIO, TIER_BPS_DENOMINATOR, TIER_COVERAGE_BPS,
+    TIME_GATE_LEDGERS, VESTING_LEDGERS,
 };
 
 // -----------------------------------------------------------------------
@@ -60,6 +61,27 @@ pub struct ClaimUnlocked {
     #[topic]
     pub wallet: Address,
     pub claim_id: BytesN<32>,
+}
+
+/// NEW 2026-07-22 (Rule A) — emitted by `approve_claim`, the staker's own
+/// action that triggers points burn + forfeiture + cooldown/vesting start.
+#[contractevent]
+pub struct ClaimApproved {
+    #[topic]
+    pub wallet: Address,
+    pub claim_id: BytesN<32>,
+    pub points_burned: i128,
+}
+
+/// NEW 2026-07-22 — emitted by either `expire_pending_approval` (Rule A)
+/// or `expire_stale_claim` (Rule B). `released` is whatever was returned
+/// to the pool.
+#[contractevent]
+pub struct ClaimExpired {
+    #[topic]
+    pub wallet: Address,
+    pub claim_id: BytesN<32>,
+    pub released: i128,
 }
 
 #[contractevent]
@@ -159,19 +181,32 @@ fn compute_claim_id(env: &Env, wallet: &Address, tx_hash: &BytesN<32>) -> BytesN
 }
 
 // -----------------------------------------------------------------------
-// Activation — shared by submit_claim's gate-met branch, unlock_pending_
-// claim, and the override flow. Forfeits the stake, banks final points,
-// snapshots total_staked BEFORE this claim's own decrement (per the
-// corrected timing note in types.rs::Claim::total_staked_snapshot), and
-// sets fresh cooldown/vesting deadlines from "now".
+// Activation — shared by `approve_claim` (staker-gated, Rule A) and the
+// override flow (admin+coSigner, bypasses Rule A entirely — two humans
+// already made the decision, no separate staker approval needed). Forfeits
+// the stake, banks final points, snapshots total_staked BEFORE this
+// claim's own decrement (per the corrected timing note in
+// types.rs::Claim::total_staked_snapshot), and sets fresh cooldown/vesting
+// deadlines from "now".
+//
+// CHANGED 2026-07-22 (points burn-on-claim mechanism, locked 2026-07-22):
+// no longer called from submit_claim/unlock_pending_claim — meeting the
+// 90-day time gate now only moves a claim to AwaitingApproval; activation
+// (and therefore burn) happens only via approve_claim or an override.
+// Also now burns the wallet's ENTIRE lifetime points_balance (not just
+// this record's points) — deliberate, per the founder: a staker who has
+// cycled through multiple stake/unstake cycles has a bigger balance, and
+// burning all of it, not just this cycle's, is the intended weight on the
+// claim decision. Order matters: bank this record's points into the
+// balance FIRST, then zero the whole thing — never the reverse, or this
+// cycle's own points would escape the burn.
 // -----------------------------------------------------------------------
 
-fn activate_claim(env: &Env, stake_record: &mut StakeRecord, claim: &mut Claim) {
+fn activate_claim(env: &Env, stake_record: &mut StakeRecord, claim: &mut Claim) -> i128 {
     let points = stake::compute_points_for_record(env, stake_record);
-    if points > 0 {
-        let banked = storage::get_points_balance(env, &claim.wallet);
-        storage::set_points_balance(env, &claim.wallet, banked + points);
-    }
+    let banked = storage::get_points_balance(env, &claim.wallet);
+    let lifetime_balance = banked + points;
+    storage::set_points_balance(env, &claim.wallet, 0);
 
     let stake_amount = stake_record.amount;
     stake_record.withdrawn = true;
@@ -195,7 +230,14 @@ fn activate_claim(env: &Env, stake_record: &mut StakeRecord, claim: &mut Claim) 
     claim.stake = stake_amount;
     claim.cooldown_ends_ledger = now_ledger + COOLDOWN_LEDGERS;
     claim.vesting_ends_ledger = claim.cooldown_ends_ledger + VESTING_LEDGERS;
+    // Rule B's inactivity clock anchors at cooldown END, not at this
+    // activation moment — eng review blocker #2: the mandatory 7-day
+    // cooldown (during which claim_stream is blocked entirely) must never
+    // count against the staker as inactivity.
+    claim.last_collected_ledger = claim.cooldown_ends_ledger;
     claim.status = ClaimStatus::Active;
+
+    lifetime_balance
 }
 
 // -----------------------------------------------------------------------
@@ -239,7 +281,7 @@ pub fn submit_claim(
     if stake_record.suspended {
         panic!("SAFU: stake suspended");
     }
-    if stake_record.claim_active {
+    if stake_record.active_claim_id.is_some() {
         panic!("SAFU: claim already active for this stake");
     }
 
@@ -295,7 +337,7 @@ pub fn submit_claim(
     );
     storage::set_total_allocated(env, total_allocated + entitlement);
 
-    stake_record.claim_active = true;
+    stake_record.active_claim_id = Some(claim_id.clone());
 
     let now_ledger = env.ledger().sequence();
     let gate_met = now_ledger.saturating_sub(stake_record.staked_at_ledger) >= TIME_GATE_LEDGERS;
@@ -312,10 +354,17 @@ pub fn submit_claim(
         total_staked_snapshot: 0,
         tier,
         status: ClaimStatus::PendingTime,
+        approve_deadline_ledger: 0,
+        last_collected_ledger: 0,
     };
 
+    // CHANGED 2026-07-22: meeting the gate no longer auto-activates
+    // (forfeits/burns/starts cooldown) — it moves the claim to
+    // AwaitingApproval, where the staker has APPROVE_WINDOW_LEDGERS to
+    // actively call approve_claim themselves (Rule A).
     if gate_met {
-        activate_claim(env, &mut stake_record, &mut claim);
+        claim.status = ClaimStatus::AwaitingApproval;
+        claim.approve_deadline_ledger = now_ledger + APPROVE_WINDOW_LEDGERS;
     }
 
     storage::set_stake(env, wallet, &stake_record);
@@ -335,6 +384,11 @@ pub fn submit_claim(
 // -----------------------------------------------------------------------
 // unlock_pending_claim — permissionless by design (staker, oracle, or
 // admin can all call it once the time gate is met; no require_auth).
+//
+// CHANGED 2026-07-22: no longer activates (forfeits/burns/starts cooldown)
+// — moves PendingTime -> AwaitingApproval, same as submit_claim's
+// already-gate-met branch. The staker still has to separately call
+// approve_claim (Rule A) before anything is forfeited.
 // -----------------------------------------------------------------------
 
 pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) {
@@ -345,22 +399,151 @@ pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) {
         panic!("SAFU: claim not pending");
     }
 
-    let mut stake_record: StakeRecord =
+    let stake_record: StakeRecord =
         storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
     let now_ledger = env.ledger().sequence();
     if now_ledger < stake_record.staked_at_ledger + TIME_GATE_LEDGERS {
         panic!("SAFU: time gate not yet met");
     }
 
-    activate_claim(env, &mut stake_record, &mut claim);
+    claim.status = ClaimStatus::AwaitingApproval;
+    claim.approve_deadline_ledger = now_ledger + APPROVE_WINDOW_LEDGERS;
 
-    storage::set_stake(env, &claim.wallet, &stake_record);
     storage::set_claim(env, claim_id, &claim);
     storage::bump_instance_ttl(env);
 
     ClaimUnlocked {
         wallet: claim.wallet.clone(),
         claim_id: claim_id.clone(),
+    }
+    .publish(env);
+}
+
+// -----------------------------------------------------------------------
+// approve_claim — NEW 2026-07-22, Rule A. The ONE action, alongside
+// claim_stream, that the staker themselves authorizes. This is the
+// genuine "walk away or pay the points cost" decision point: burns the
+// wallet's entire lifetime points_balance, then forfeits the stake and
+// starts the cooldown/vesting clock exactly as the old auto-activation
+// used to. Must be called within APPROVE_WINDOW_LEDGERS of entering
+// AwaitingApproval, or expire_pending_approval sweeps the reservation
+// back to the pool instead.
+// -----------------------------------------------------------------------
+
+pub fn approve_claim(env: &Env, claim_id: &BytesN<32>) {
+    storage::require_not_paused(env);
+
+    let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
+    claim.wallet.require_auth();
+
+    if claim.status != ClaimStatus::AwaitingApproval {
+        panic!("SAFU: claim not awaiting approval");
+    }
+    let now_ledger = env.ledger().sequence();
+    if now_ledger > claim.approve_deadline_ledger {
+        panic!("SAFU: approval window expired");
+    }
+
+    let mut stake_record: StakeRecord =
+        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+    if stake_record.suspended {
+        panic!("SAFU: stake suspended");
+    }
+
+    let points_burned = activate_claim(env, &mut stake_record, &mut claim);
+
+    storage::set_stake(env, &claim.wallet, &stake_record);
+    storage::set_claim(env, claim_id, &claim);
+    storage::bump_instance_ttl(env);
+
+    ClaimApproved {
+        wallet: claim.wallet.clone(),
+        claim_id: claim_id.clone(),
+        points_burned,
+    }
+    .publish(env);
+}
+
+// -----------------------------------------------------------------------
+// expire_pending_approval — NEW 2026-07-22, Rule A sweep. Permissionless,
+// mirrors unlock_pending_claim's pattern (anyone can trigger a time-based
+// transition; Soroban has no native scheduler, so this relies on an
+// external caller — flagged operationally in the eng review, recommend
+// the oracle backend/a keeper script owns calling this in production).
+// Nothing was ever forfeited in AwaitingApproval, so there's no stake to
+// restore — just release the reservation and unblock the wallet.
+// -----------------------------------------------------------------------
+
+pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) {
+    let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
+    if claim.status != ClaimStatus::AwaitingApproval {
+        panic!("SAFU: claim not awaiting approval");
+    }
+    let now_ledger = env.ledger().sequence();
+    if now_ledger <= claim.approve_deadline_ledger {
+        panic!("SAFU: approval window not yet expired");
+    }
+
+    let total_allocated = storage::get_total_allocated(env);
+    storage::set_total_allocated(env, total_allocated.saturating_sub(claim.entitlement));
+
+    let mut stake_record: StakeRecord =
+        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+    stake_record.active_claim_id = None;
+    storage::set_stake(env, &claim.wallet, &stake_record);
+
+    claim.status = ClaimStatus::Expired;
+    storage::set_claim(env, claim_id, &claim);
+    storage::bump_instance_ttl(env);
+
+    ClaimExpired {
+        wallet: claim.wallet.clone(),
+        claim_id: claim_id.clone(),
+        released: claim.entitlement,
+    }
+    .publish(env);
+}
+
+// -----------------------------------------------------------------------
+// expire_stale_claim — NEW 2026-07-22, Rule B sweep. Permissionless, same
+// operational caveat as expire_pending_approval above. Releases whatever
+// entitlement remains uncollected after COLLECTION_INACTIVITY_LEDGERS of
+// zero claim_stream activity. Forfeiture already happened at approval, so
+// (unlike expire_pending_approval) there's no stake_record to unblock —
+// active_claim_id is cleared for storage hygiene only, harmless either
+// way since `withdrawn=true` already blocks every relevant path.
+// -----------------------------------------------------------------------
+
+pub fn expire_stale_claim(env: &Env, claim_id: &BytesN<32>) {
+    let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
+    if claim.status != ClaimStatus::Active {
+        panic!("SAFU: claim not active");
+    }
+    if claim.streamed >= claim.entitlement {
+        panic!("SAFU: claim already fully streamed");
+    }
+    let now_ledger = env.ledger().sequence();
+    if now_ledger.saturating_sub(claim.last_collected_ledger) <= COLLECTION_INACTIVITY_LEDGERS {
+        panic!("SAFU: claim not yet stale");
+    }
+
+    let remaining = claim.entitlement - claim.streamed;
+    let total_allocated = storage::get_total_allocated(env);
+    storage::set_total_allocated(env, total_allocated.saturating_sub(remaining));
+
+    let mut stake_record: StakeRecord =
+        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+    stake_record.active_claim_id = None;
+    storage::set_stake(env, &claim.wallet, &stake_record);
+
+    claim.status = ClaimStatus::Expired;
+    storage::set_claim(env, claim_id, &claim);
+    storage::bump_instance_ttl(env);
+
+    ClaimExpired {
+        wallet: claim.wallet.clone(),
+        claim_id: claim_id.clone(),
+        released: remaining,
     }
     .publish(env);
 }
@@ -390,6 +573,9 @@ pub fn claim_stream(env: &Env, claim_id: &BytesN<32>, beneficiary: &Address) -> 
 
     let stake_record: StakeRecord =
         storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+    if stake_record.suspended {
+        panic!("SAFU: stake suspended");
+    }
     let expected_hash = env.crypto().sha256(&beneficiary.to_xdr(env)).to_bytes();
     if expected_hash != stake_record.beneficiary_hash {
         panic!("SAFU: wrong beneficiary");
@@ -408,16 +594,38 @@ pub fn claim_stream(env: &Env, claim_id: &BytesN<32>, beneficiary: &Address) -> 
     let cap_base = storage::get_total_staked(env).max(claim.total_staked_snapshot);
     let bps = dynamic_outflow_bps(env, cap_base);
     let cap = cap_base * bps / BPS_DENOMINATOR;
-    let available_today = (cap - daily_outflow_so_far).max(0);
+    // Bug 4 fix (eng review 2026-07-22): was `(cap - daily_outflow_so_far)
+    // .max(0)` — under this workspace's `overflow-checks = true`, the
+    // subtraction itself panics before `.max(0)` ever runs if
+    // daily_outflow_so_far > cap (a real, reachable case — the cap can
+    // shrink mid-day as utilization rises from other claims), crashing a
+    // legitimate staker's routine call instead of gracefully returning
+    // "try again tomorrow." saturating_sub clamps within the subtraction
+    // itself, so there's nothing left for a stale `.max(0)` to (fail to) do.
+    let available_today = cap.saturating_sub(daily_outflow_so_far);
     let transfer_amount = claimable.min(available_today);
     if transfer_amount <= 0 {
         panic!("SAFU: daily outflow cap reached, try again tomorrow");
     }
 
     claim.streamed += transfer_amount;
+    // Rule B: any successful collection resets the inactivity clock.
+    claim.last_collected_ledger = now_ledger;
     if claim.streamed >= claim.entitlement {
         claim.status = ClaimStatus::Completed;
     }
+    // Bug 1 fix (eng review 2026-07-22): release total_allocated
+    // incrementally as money actually leaves, not only at Completed or
+    // via cancel/override. Every claim that pays out in full used to
+    // permanently inflate total_allocated with nothing ever decrementing
+    // it back — eventually the solvency check in submit_claim would
+    // reject all new legitimate claims even with ample fresh capital.
+    // This shape (decrement per transfer) is also what makes
+    // expire_stale_claim's release math correct: by the time it runs,
+    // total_allocated already reflects exactly `entitlement - streamed`
+    // for this claim, the same pattern cancel_claim/execute_override use.
+    let total_allocated = storage::get_total_allocated(env);
+    storage::set_total_allocated(env, total_allocated.saturating_sub(transfer_amount));
     storage::set_daily_outflow(env, day, daily_outflow_so_far + transfer_amount);
     storage::set_claim(env, claim_id, &claim);
     storage::bump_instance_ttl(env);
@@ -443,21 +651,32 @@ pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) {
     admin.require_auth();
 
     let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
-    if claim.status != ClaimStatus::Active && claim.status != ClaimStatus::PendingTime {
+    // CHANGED 2026-07-22 (eng review blocker #4): AwaitingApproval added.
+    // Nothing forfeits during AwaitingApproval (same as PendingTime), so
+    // it falls into the same no-penalty branch below — without this, admin
+    // could not cancel a false positive sitting in the new approval window.
+    if claim.status != ClaimStatus::Active
+        && claim.status != ClaimStatus::PendingTime
+        && claim.status != ClaimStatus::AwaitingApproval
+    {
         panic!("SAFU: claim not cancellable");
     }
 
     let unstreamed = claim.entitlement - claim.streamed;
     let total_allocated = storage::get_total_allocated(env);
-    storage::set_total_allocated(env, (total_allocated - unstreamed).max(0));
+    // Bug 4 fix: saturating_sub, not subtract-then-.max(0) — see claim_stream
+    // for the full explanation of why the old pattern was dead code.
+    storage::set_total_allocated(env, total_allocated.saturating_sub(unstreamed));
 
     let mut stake_record: StakeRecord =
         storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
 
     // Active: the stake was already forfeited at activation — restore it
-    // and apply the 365-day penalty lock. PendingTime: the stake was
-    // never forfeited (no agency over the oracle's submission) — nothing
-    // to restore, no penalty, just unblock withdrawal below.
+    // and apply the 365-day penalty lock. PendingTime/AwaitingApproval:
+    // the stake was never forfeited (no agency over the oracle's
+    // submission, and no agency over an admin's own gate-met transition
+    // either) — nothing to restore, no penalty, just unblock withdrawal
+    // below.
     if claim.status == ClaimStatus::Active {
         stake_record.withdrawn = false;
         // No `stake_record.amount = claim.stake` here — amount was never
@@ -469,7 +688,7 @@ pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) {
         storage::set_total_stakers(env, storage::get_total_stakers(env) + 1);
     }
 
-    stake_record.claim_active = false;
+    stake_record.active_claim_id = None;
     storage::set_stake(env, &claim.wallet, &stake_record);
 
     claim.status = ClaimStatus::Cancelled;
@@ -561,6 +780,13 @@ pub fn approve_override(
 
 fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
     let existing = storage::get_claim(env, claim_id);
+    // Bug 3 fix (eng review 2026-07-22): if this is a re-execution/
+    // correction of an already-Active, already-partially-streamed claim,
+    // carry its `streamed` amount forward. The old code always hard-coded
+    // a fresh claim record's `streamed` to 0, so a correction let the
+    // beneficiary collect the new entitlement ON TOP of what they'd
+    // already received under the old one — an overpayment.
+    let mut carried_streamed: i128 = 0;
     if let Some(ref c) = existing {
         if c.status == ClaimStatus::Completed {
             panic!("SAFU: claim already completed");
@@ -575,15 +801,38 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
         // would double-subtract total_allocated for an override
         // re-targeting a previously-cancelled wallet+tx_hash pair —
         // silently masked by the .max(0) clamp rather than caught.
-        if c.status == ClaimStatus::Active || c.status == ClaimStatus::PendingTime {
+        // AwaitingApproval added 2026-07-22 alongside PendingTime — same
+        // "nothing forfeited yet" treatment.
+        if c.status == ClaimStatus::Active
+            || c.status == ClaimStatus::PendingTime
+            || c.status == ClaimStatus::AwaitingApproval
+        {
             let unstreamed = c.entitlement - c.streamed;
             let total_allocated = storage::get_total_allocated(env);
-            storage::set_total_allocated(env, (total_allocated - unstreamed).max(0));
+            // Bug 4 fix: saturating_sub, not subtract-then-.max(0).
+            storage::set_total_allocated(env, total_allocated.saturating_sub(unstreamed));
+        }
+        if c.status == ClaimStatus::Active {
+            carried_streamed = c.streamed;
         }
     }
 
     let mut stake_record: StakeRecord =
         storage::get_stake(env, &req.wallet).expect("SAFU: no stake");
+
+    // Bug 2 fix (eng review 2026-07-22): enforce the one-wallet-one-claim
+    // invariant here too — submit_claim already refused a second claim
+    // while a wallet had one active, but execute_override had no
+    // equivalent guard, so an override under a DIFFERENT tx_hash than an
+    // already-in-flight claim could create two independently-payable
+    // claims against one forfeited stake. A re-execution of THIS SAME
+    // claim_id (correcting terms, resetting cooldown, etc.) is still
+    // allowed — only a genuinely different, conflicting claim is blocked.
+    if let Some(active_id) = &stake_record.active_claim_id {
+        if active_id != claim_id {
+            panic!("SAFU: wallet already has a different active claim");
+        }
+    }
 
     // Reads live — amount is never zeroed by forfeiture (activate_claim's
     // doc comment), so this needs no withdrawn-branch fallback to a prior
@@ -625,15 +874,22 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
         tx_hash: req.tx_hash.clone(),
         hack_timestamp: env.ledger().timestamp(),
         entitlement: req.entitlement,
-        streamed: 0,
+        streamed: carried_streamed,
         stake: original_stake_amount,
         cooldown_ends_ledger: 0,
         vesting_ends_ledger: 0,
         total_staked_snapshot: 0,
         tier: req.tier,
         status: ClaimStatus::Active,
+        approve_deadline_ledger: 0,
+        last_collected_ledger: 0,
     };
 
+    // The 2-of-2 override bypasses the oracle/time-gate path entirely, AND
+    // (2026-07-22) the new staker-approval gate too — admin+coSigner
+    // consensus IS the security gate, no separate staker approval is
+    // required. Activation (including the points burn) happens directly
+    // here, same as it always has for a fresh forfeiture.
     if !stake_record.withdrawn {
         activate_claim(env, &mut stake_record, &mut claim);
     } else {
@@ -641,8 +897,9 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
         claim.cooldown_ends_ledger = now_ledger + COOLDOWN_LEDGERS;
         claim.vesting_ends_ledger = claim.cooldown_ends_ledger + VESTING_LEDGERS;
         claim.total_staked_snapshot = storage::get_total_staked(env);
+        claim.last_collected_ledger = claim.cooldown_ends_ledger;
     }
-    stake_record.claim_active = true;
+    stake_record.active_claim_id = Some(claim_id.clone());
 
     storage::set_stake(env, &req.wallet, &stake_record);
     storage::set_claim(env, claim_id, &claim);

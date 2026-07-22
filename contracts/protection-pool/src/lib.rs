@@ -72,8 +72,11 @@ impl ProtectionPool {
         admin::suspend_stake(&env, &wallet);
     }
 
-    pub fn unsuspend_stake(env: Env, wallet: Address) {
-        admin::unsuspend_stake(&env, &wallet);
+    /// `claim_id` optional — pass the wallet's in-flight claim (if any) so
+    /// its Rule A/B deadline clock resets on unsuspend (eng review
+    /// blocker #1). `None` if the wallet has no claim needing a reset.
+    pub fn unsuspend_stake(env: Env, wallet: Address, claim_id: Option<BytesN<32>>) {
+        admin::unsuspend_stake(&env, &wallet, claim_id);
     }
 
     // -- stake / withdraw --
@@ -111,6 +114,28 @@ impl ProtectionPool {
 
     pub fn unlock_pending_claim(env: Env, claim_id: BytesN<32>) {
         claim::unlock_pending_claim(&env, &claim_id);
+    }
+
+    /// NEW 2026-07-22 (Rule A) — staker-authorized. Burns the wallet's
+    /// entire lifetime points balance, forfeits the stake, starts
+    /// cooldown/vesting. Must be called within `APPROVE_WINDOW_LEDGERS` of
+    /// the claim entering `AwaitingApproval`.
+    pub fn approve_claim(env: Env, claim_id: BytesN<32>) {
+        claim::approve_claim(&env, &claim_id);
+    }
+
+    /// NEW 2026-07-22 (Rule A sweep) — permissionless, mirrors
+    /// `unlock_pending_claim`. Releases the reservation back to the pool
+    /// if the staker never approved within the window.
+    pub fn expire_pending_approval(env: Env, claim_id: BytesN<32>) {
+        claim::expire_pending_approval(&env, &claim_id);
+    }
+
+    /// NEW 2026-07-22 (Rule B sweep) — permissionless. Releases whatever's
+    /// left uncollected if the staker goes `COLLECTION_INACTIVITY_LEDGERS`
+    /// with zero `claim_stream` activity.
+    pub fn expire_stale_claim(env: Env, claim_id: BytesN<32>) {
+        claim::expire_stale_claim(&env, &claim_id);
     }
 
     pub fn claim_stream(env: Env, claim_id: BytesN<32>, beneficiary: Address) -> i128 {

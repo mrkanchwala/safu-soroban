@@ -4,10 +4,10 @@
 //! on Claim/OverrideRequest records and is conceptually part of the
 //! claims subsystem, not admin config.
 
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{Address, BytesN, Env};
 
 use crate::storage;
-use crate::types::StakeRecord;
+use crate::types::{ClaimStatus, StakeRecord, APPROVE_WINDOW_LEDGERS};
 
 /// Reinitialization guard (vuln checklist V6) — `has()` check before any
 /// state is written, not just before returning early.
@@ -91,6 +91,15 @@ pub fn unpause(env: &Env) {
 
 /// V8: suspendStake/unsuspendStake — blocks payout eligibility, does NOT
 /// block principal withdrawal (suspended stakers can still exit).
+///
+/// CHANGED 2026-07-22 (eng review, bug 5 / suspend upgrade): previously
+/// only blocked a brand-new `submit_claim` — a claim already filed
+/// (PendingTime/AwaitingApproval) still activated on schedule, and an
+/// already-Active claim kept streaming, completely unaffected by a
+/// suspension applied after the fact. `claim.rs`'s `approve_claim` and
+/// `claim_stream` now both check `suspended` directly, so this same
+/// `suspended = true` flag now also freezes an in-progress claim — no
+/// change needed here, the enforcement lives on the read side.
 pub fn suspend_stake(env: &Env, wallet: &Address) {
     let admin = storage::get_admin(env);
     admin.require_auth();
@@ -106,7 +115,18 @@ pub fn suspend_stake(env: &Env, wallet: &Address) {
     storage::set_stake(env, wallet, &record);
 }
 
-pub fn unsuspend_stake(env: &Env, wallet: &Address) {
+/// CHANGED 2026-07-22 (eng review blocker #1): takes an optional
+/// `claim_id` so admin can reset whichever new deadline clock (Rule A's
+/// `approve_deadline_ledger` or Rule B's `last_collected_ledger`) was
+/// running against this wallet's claim while suspended — otherwise a
+/// staker could lose their entitlement to Rule A/B expiry purely because
+/// admin froze them, through no fault of their own. Resets the relevant
+/// clock to "now" (extends the full window fresh) rather than trying to
+/// credit back exact suspended duration — simpler, and errs in the
+/// staker's favor. A no-op on the clock if `claim_id` is `None`, the
+/// claim doesn't exist, or it's in neither AwaitingApproval nor Active
+/// (nothing to reset) — admin can still unsuspend freely in those cases.
+pub fn unsuspend_stake(env: &Env, wallet: &Address, claim_id: Option<BytesN<32>>) {
     let admin = storage::get_admin(env);
     admin.require_auth();
 
@@ -116,6 +136,23 @@ pub fn unsuspend_stake(env: &Env, wallet: &Address) {
     }
     record.suspended = false;
     storage::set_stake(env, wallet, &record);
+
+    if let Some(id) = claim_id {
+        if let Some(mut claim) = storage::get_claim(env, &id) {
+            let now_ledger = env.ledger().sequence();
+            match claim.status {
+                ClaimStatus::AwaitingApproval => {
+                    claim.approve_deadline_ledger = now_ledger + APPROVE_WINDOW_LEDGERS;
+                    storage::set_claim(env, &id, &claim);
+                }
+                ClaimStatus::Active => {
+                    claim.last_collected_ledger = now_ledger;
+                    storage::set_claim(env, &id, &claim);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 /// Mirrors V8's `setPoolSize` — admin-adjustable operational cap.
