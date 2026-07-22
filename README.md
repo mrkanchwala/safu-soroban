@@ -8,8 +8,9 @@ mechanics, ported wholesale from V8. Yield deployment (Lido wstETH on V8,
 DeFindex/Blend planned for Tranche 2) is deliberately excluded from this
 scope.
 
-**Status:** core mechanics complete and tested (157 unit tests, 96.65%
-line coverage, 100% of catchable mutants killed — see `TESTING.md` for
+**Status:** core mechanics complete and tested (173 unit tests, 96.38%
+line coverage, 100% of catchable mutants killed as of 2026-07-15 — not
+yet re-run against the 2026-07-22 mechanism update, see `TESTING.md` for
 the full methodology), compiles to WASM
 (`cargo build --release --target wasm32v1-none`), `/audit-chain` +
 `/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM — see `audits/`),
@@ -20,7 +21,7 @@ open item with the SCF team (see below).
 
 ```bash
 cargo check --package protection-pool          # fast type/logic check
-cargo test --package protection-pool           # 157 unit tests
+cargo test --package protection-pool           # 173 unit tests
 cargo build --package protection-pool --release --target wasm32v1-none
 stellar contract build --optimize              # or: stellar contract optimize --wasm <path>
 ```
@@ -73,12 +74,15 @@ Two targets — `fuzz_solvency` (the core invariant) and `fuzz_override`
 (`cargo install cargo-fuzz`). **On macOS (Apple Silicon), this currently
 crashes at libFuzzer's own startup** (`flockfile`/`vfprintf`, before any
 fuzz iteration runs) — a host ASan/libc incompatibility confirmed
-unrelated to this contract. Two working options: `Dockerfile.fuzz`
+unrelated to this contract, reproduced independently on 2026-07-14 and
+again on 2026-07-22. Two working options: `Dockerfile.fuzz`
 (`docker build -f Dockerfile.fuzz -t safu-fuzz . && docker run --rm
 safu-fuzz`), or run natively on any Linux host (no Docker needed there —
-the incompatibility is macOS-specific). Combined results across both
-environments and targets: **114,344 runs, zero crashes, zero
-solvency-invariant violations.** Full breakdown: `TESTING.md` §4.
+the incompatibility is macOS-specific; this is how the 2026-07-22 re-run
+against the updated mechanism was done, via the team's Linux test VPS).
+Combined results across all environments and both targets: **133,672
+runs, zero crashes, zero solvency-invariant violations.** Full
+breakdown: `TESTING.md` §4.
 
 ### Deploy-time arguments
 
@@ -199,11 +203,13 @@ pub enum DataKey {
   read as meaning the actual mechanic, not the grant text's simplified
   description). Not yet raised with the SCF team.
 - **No Halmos-equivalent exists for Soroban.** The solvency invariant and
-  claim state machine rest on test coverage (157 unit tests, 100% of
-  catchable mutants killed) and 114,344 fuzz runs across two targets and
-  two environments, rather than symbolic proof — see `TESTING.md` for
-  the full methodology. Certora Sunbeam (the real ecosystem tool) is
-  deliberately deferred to Tranche 3's SCF-funded audit.
+  claim state machine rest on test coverage (173 unit tests, 100% of
+  catchable mutants killed as of 2026-07-15 — mutation testing not yet
+  re-run against the 2026-07-22 mechanism update) and 133,672 fuzz runs
+  across two targets and multiple environments, rather than symbolic
+  proof — see `TESTING.md` for the full methodology. Certora Sunbeam (the
+  real ecosystem tool) is deliberately deferred to Tranche 3's SCF-funded
+  audit.
 - **`cancel_pending_override`'s mechanics were re-verified against V8
   directly** (was previously an unconfirmed guess) — see `src/claim.rs`
   module doc comment for the full account of what was wrong and what was
