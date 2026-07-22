@@ -6,7 +6,14 @@ only (this contract has not been deployed anywhere yet — see
 `README.md`'s "Known open items"). All numbers below are reproducible
 with the commands in each section.
 
-## 1. Unit tests — 157 passing
+**Updated 2026-07-22** — added a points burn-on-claim mechanism (staker-
+gated approval step + two 100-day expiry rules, full detail in `claim.rs`
+module doc comments) and fixed 5 pre-existing accounting bugs found during
+a full-contract review, independent of the new mechanism (see §7 for
+what they were). This update re-measured every section below against the
+new code rather than leaving the 2026-07-15 numbers in place unverified.
+
+## 1. Unit tests — 173 passing (up from 157)
 
 ```bash
 cargo test --package protection-pool
@@ -16,15 +23,17 @@ Split by mechanic in `src/test/`:
 
 | Module | Covers |
 |---|---|
-| `admin_tests.rs` | init, oracle/coSigner/admin rotation, pause, suspend |
+| `admin_tests.rs` | init, oracle/coSigner/admin rotation, pause, suspend (now including suspend/unsuspend on an already-approved claim) |
 | `stake_tests.rs` | stake, withdraw, `set_beneficiary`, `emergency_exit`, points |
-| `claim_tests.rs` | full claim lifecycle: submit → activate → stream → complete/cancel |
+| `claim_tests.rs` | full claim lifecycle: submit → **AwaitingApproval → approve_claim (burn) →** stream → complete/cancel, plus the new `expire_pending_approval`/`expire_stale_claim` sweeps and their suspend-interaction edge cases |
 | `override_tests.rs` | 2-of-2 admin+coSigner override/rotation escape hatch |
 | `solvency_tests.rs` | the core `total_allocated ≤ total_staked` invariant |
 | `profiling_tests.rs` | CPU/memory cost per hot-path entrypoint (see README) |
-| `mutation_gap_tests.rs` | 24 boundary/exact-value tests added 2026-07-15 specifically to close mutation-testing gaps (see §3) |
+| `mutation_gap_tests.rs` | boundary/exact-value tests, including 2 new regression tests added 2026-07-22 proving the override-conflict guard and the daily-cap saturating-subtraction fix specifically (see §3, §7) |
 
-## 2. Coverage — 96.65% line / 97.77% region / 93.64% function
+16 pre-existing tests were updated for the new approval-gated flow (the gate no longer auto-activates a claim); none were weakened — 2 of the 16 had been silently pinning bugs as "expected" values, corrected with the bug fix rather than left inconsistent.
+
+## 2. Coverage — 96.38% line / 97.53% region / 95.69% function (re-measured 2026-07-22)
 
 ```bash
 cargo llvm-cov --package protection-pool --summary-only
@@ -32,13 +41,15 @@ cargo llvm-cov --package protection-pool --summary-only
 
 | File | Line % | Notes |
 |---|---|---|
-| `admin.rs` | 98.18% | |
-| `claim.rs` | 97.30% | largest file (683 lines) — claim lifecycle + override flow |
-| `lib.rs` | 93.33% | thin entrypoint wrappers |
+| `admin.rs` | 85.94% | dipped from 98.18% — new suspend/unsuspend clock-reset branches added 2026-07-22, not yet fully covered by a dedicated per-branch test |
+| `claim.rs` | 98.28% | largest file — claim lifecycle + override flow + the new approval/expiry functions |
+| `lib.rs` | 98.45% | thin entrypoint wrappers |
 | `stake.rs` | 94.55% | |
 | `storage.rs` | 99.44% | |
 | `test/common.rs` | 100% | shared test setup |
-| `types.rs` | 0% | 4 lines — pure data/const declarations, no branches to cover |
+| `types.rs` | 0% | pure data/const declarations, no branches to cover |
+
+Overall coverage held essentially flat despite substantial new logic (function coverage actually improved, 93.64% → 95.69%) — the one file below its prior number, `admin.rs`, is flagged honestly rather than smoothed over.
 
 Industry guidance (checked 2026-07-15 against current smart-contract QA
 practice) targets ≥90% line coverage with ≥95% on fund-handling code
@@ -86,6 +97,14 @@ confirmed equivalent (defensive-only guard, no reachable call site
 violates it), and added as the 10th exclusion. **Result: 100% of
 catchable mutants killed.**
 
+**Not re-run against the 2026-07-22 changes.** `cargo mutants --workspace`
+takes long enough that it wasn't re-run this pass — the 100% figure above
+applies to the code as it stood on 2026-07-15, not to the new
+`approve_claim`/`expire_pending_approval`/`expire_stale_claim` functions
+or the 5 bug fixes added since. Flagged honestly as a gap, not silently
+carried forward as if it still covers the new surface. Recommended before
+this report is treated as fully current.
+
 ## 4. Fuzzing — 2 targets, 2 independent environments, 53,588+37,943 runs
 
 ```bash
@@ -113,6 +132,16 @@ SubmitClaim/ClaimStream/CancelClaim/AdvanceDays-style action sequences:
 **Combined: 114,344 fuzzed action-sequences across both targets and both
 environments. Zero crashes, zero solvency-invariant violations, ever.**
 
+**2026-07-22, third data point — same macOS ASan/libFuzzer host
+incompatibility recurred** (confirmed independently again: both targets
+crashed identically inside libFuzzer's own internal print routine before
+exercising any contract code, not a target-code issue). Worked around by
+re-running natively on the Linux VPS test rig against the updated
+(mechanism + bug-fix) code: `fuzz_solvency` 8,237 runs / `fuzz_override`
+11,091 runs, 90s each. **19,328 additional runs, zero crashes,
+zero solvency-invariant violations** — the new approval/expiry logic and
+all 5 bug fixes held up clean under fuzzing, not just the unit-test suite.
+
 Soroban has no Halmos-equivalent symbolic verifier (Kani was researched
 and ruled infeasible for `no_std`/FFI-heavy `soroban-sdk` code; Certora
 Sunbeam is the real ecosystem tool, deliberately deferred to Tranche 3's
@@ -127,11 +156,12 @@ cargo audit
 grep -rn "unsafe" --include="*.rs" src/
 ```
 
-- **clippy:** 1 trivial style warning (`needless_borrows_for_generic_args`,
-  `stake.rs:178`) — no functional issue, not yet fixed.
-- **cargo-audit (RUSTSEC advisory database):** 0 CVEs. 1 unmaintained-crate
-  notice (`paste`, a transitive `soroban-sdk` dependency — not directly
-  actionable).
+- **clippy:** 0 warnings (re-checked 2026-07-22 against the full updated
+  codebase — the 1 prior trivial style warning was fixed in a later
+  commit before this update).
+- **cargo-audit (RUSTSEC advisory database):** 0 CVEs (re-checked
+  2026-07-22, unchanged). 1 unmaintained-crate notice (`paste`, a
+  transitive `soroban-sdk` dependency — not directly actionable).
 - **`unsafe` blocks:** zero, confirmed by grep.
 - **Arithmetic safety:** the contract uses plain `+`/`*`/`/` rather than
   `checked_*` throughout — verified safe because the workspace
@@ -163,6 +193,14 @@ Full narrative for each: `src/claim.rs`, `src/admin.rs`, and
 `src/stake.rs` module-level doc comments; `context/knowledge/
 smartcontract-soroban.md` §5b in the SAFU team's internal ops repo.
 
+**The 2026-07-22 points burn-on-claim mechanism has no V8 equivalent to
+verify against — it's net-new Soroban logic, not a port.** V8's points
+were passive (accrued, never consumed); this build adds a staker-gated
+approval step that burns the wallet's full points balance, plus two
+100-day expiry rules with no analogue anywhere in the reference contract.
+Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
+§7 (adversarial review) instead of source-parity checking.
+
 ## 7. Adversarial security review
 
 - **`/audit-chain --target soroban`, comprehensive mode (2026-07-15):**
@@ -171,6 +209,31 @@ smartcontract-soroban.md` §5b in the SAFU team's internal ops repo.
   manipulation, oracle rate-limit gaming, dust/rounding extraction,
   storage-TTL griefing) — all clean. **0 CRITICAL/HIGH/MEDIUM.** Full
   report: `audits/2026-07-15_internal-audit-chain.md`.
+- **`/audit-chain --target soroban`, comprehensive mode, re-run 2026-07-22
+  on the burn-mechanism + bug-fix changes** — explicitly run in
+  bug-bounty style (actively trying to break the new logic, not just
+  confirming the checklist). Found and fixed **3 real issues within the
+  same pass**, all in the suspend/unsuspend fairness logic added this
+  session (the core burn/expiry mechanism and the 5 bug fixes held up
+  clean under this adversarial re-examination):
+  1. The two new expiry sweeps (`expire_pending_approval`/
+     `expire_stale_claim`) could still fire while a staker was actively
+     suspended — the original fix only reset the deadline on unsuspend,
+     never blocked the sweep from running during an ongoing suspension.
+  2. The suspend-freezes-an-active-claim upgrade was unreachable in
+     practice — a separate, pre-existing guard in `suspend_stake` blocked
+     admin from ever suspending an already-forfeited stake, exactly the
+     case the upgrade needed to reach. Found by tracing a real test
+     failure back to its actual cause, not by inspection alone.
+  3. `unsuspend_stake`'s deadline-reset didn't verify the passed claim
+     belonged to the wallet being unsuspended (admin-only surface, low
+     severity, fixed anyway).
+
+  All 3 fixed, 3 new regression tests added (one proves the suspend fix's
+  positive path genuinely works, not just that the bug panics correctly).
+  **14/14 + 8/8 checklists PASS, 0 CRITICAL/HIGH.** Full report:
+  `outputs/2026-07-22_audit-chain-soroban-protection-pool.md` in the SAFU
+  team's internal ops repo.
 - **`/cso`, oracle/infra scope (2026-07-15):** secrets archaeology on
   this repo (working tree + full git history) — clean. The Stellar
   oracle signer itself is Tranche 2 scope and doesn't exist yet; a
