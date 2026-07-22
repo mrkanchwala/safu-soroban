@@ -197,6 +197,52 @@ fn expire_pending_approval_releases_reservation() {
     s.client.withdraw(&staker, &ben);
 }
 
+/// Audit finding 2026-07-22 (adversarial /audit-chain re-review): the
+/// suspend upgrade was dead code for any already-approved claim until
+/// admin.rs's `suspend_stake` guard was corrected to allow suspending a
+/// forfeited-but-still-active stake, not just a pre-forfeiture one. This
+/// proves the positive path actually works end-to-end: suspend mid-
+/// streaming genuinely blocks the next collection.
+#[test]
+#[should_panic(expected = "SAFU: stake suspended")]
+fn suspend_during_active_streaming_blocks_claim_stream() {
+    let env = new_env();
+    let s = setup(&env);
+    let entitlement = 4_500_000i128;
+    let (staker, ben, claim_id) = active_claim_with_entitlement(&env, &s, entitlement);
+    advance_days(&env, 7);
+    advance_days(&env, 10);
+    s.client.claim_stream(&claim_id, &ben); // proves streaming works first
+    s.client.suspend_stake(&staker); // now reachable post-forfeiture
+    advance_days(&env, 10);
+    s.client.claim_stream(&claim_id, &ben); // blocked while suspended
+}
+
+/// Audit finding 2026-07-22 (adversarial re-review, /audit-chain): a
+/// suspended staker's Rule A clock must not be sweepable while they're
+/// still frozen out of acting — otherwise staying suspended past the
+/// deadline (never explicitly unsuspended) loses them the reservation
+/// regardless, defeating blocker #1's fairness fix.
+#[test]
+#[should_panic(expected = "SAFU: stake suspended")]
+fn expire_pending_approval_blocked_while_suspended() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    s.client.suspend_stake(&staker);
+    advance_days(&env, 101); // deadline genuinely passed
+    s.client.expire_pending_approval(&claim_id);
+}
+
 #[test]
 #[should_panic(expected = "SAFU: approval window not yet expired")]
 fn expire_pending_approval_before_deadline_panics() {
@@ -249,6 +295,23 @@ fn expire_stale_claim_zero_streamed_case() {
     advance_days(&env, 7 + 101);
     s.client.expire_stale_claim(&claim_id);
     assert_eq!(s.client.get_total_allocated(), 0);
+}
+
+/// Audit finding 2026-07-22 — same fairness gap as
+/// expire_pending_approval_blocked_while_suspended, but for Rule B.
+#[test]
+#[should_panic(expected = "SAFU: stake suspended")]
+fn expire_stale_claim_blocked_while_suspended() {
+    let env = new_env();
+    let s = setup(&env);
+    let entitlement = 4_500_000i128;
+    let (staker, ben, claim_id) = active_claim_with_entitlement(&env, &s, entitlement);
+    advance_days(&env, 7);
+    advance_days(&env, 10);
+    s.client.claim_stream(&claim_id, &ben);
+    s.client.suspend_stake(&staker);
+    advance_days(&env, 101); // genuinely stale now
+    s.client.expire_stale_claim(&claim_id);
 }
 
 #[test]

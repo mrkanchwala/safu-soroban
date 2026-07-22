@@ -479,6 +479,20 @@ pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) {
     if claim.status != ClaimStatus::AwaitingApproval {
         panic!("SAFU: claim not awaiting approval");
     }
+    let mut stake_record: StakeRecord =
+        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+    // Found in adversarial re-review 2026-07-22, after the initial
+    // implementation: blocker #1's fix only reset the clock on unsuspend
+    // — it never stopped a suspended staker's deadline from expiring
+    // WHILE still suspended. Without this check, staying suspended past
+    // the deadline (never explicitly unsuspended) would sweep the
+    // reservation away regardless — exactly the unfairness blocker #1 was
+    // meant to prevent. Blocking the sweep entirely while suspended closes
+    // this: it can only ever expire after an explicit unsuspend, which
+    // itself grants a fresh full window.
+    if stake_record.suspended {
+        panic!("SAFU: stake suspended");
+    }
     let now_ledger = env.ledger().sequence();
     if now_ledger <= claim.approve_deadline_ledger {
         panic!("SAFU: approval window not yet expired");
@@ -487,8 +501,6 @@ pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) {
     let total_allocated = storage::get_total_allocated(env);
     storage::set_total_allocated(env, total_allocated.saturating_sub(claim.entitlement));
 
-    let mut stake_record: StakeRecord =
-        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
     stake_record.active_claim_id = None;
     storage::set_stake(env, &claim.wallet, &stake_record);
 
@@ -522,6 +534,15 @@ pub fn expire_stale_claim(env: &Env, claim_id: &BytesN<32>) {
     if claim.streamed >= claim.entitlement {
         panic!("SAFU: claim already fully streamed");
     }
+    let mut stake_record: StakeRecord =
+        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+    // Same fairness fix as expire_pending_approval above, found in the
+    // same adversarial re-review — a suspended staker's Rule B clock must
+    // not be allowed to expire while they're still frozen out of
+    // collecting.
+    if stake_record.suspended {
+        panic!("SAFU: stake suspended");
+    }
     let now_ledger = env.ledger().sequence();
     if now_ledger.saturating_sub(claim.last_collected_ledger) <= COLLECTION_INACTIVITY_LEDGERS {
         panic!("SAFU: claim not yet stale");
@@ -531,8 +552,6 @@ pub fn expire_stale_claim(env: &Env, claim_id: &BytesN<32>) {
     let total_allocated = storage::get_total_allocated(env);
     storage::set_total_allocated(env, total_allocated.saturating_sub(remaining));
 
-    let mut stake_record: StakeRecord =
-        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
     stake_record.active_claim_id = None;
     storage::set_stake(env, &claim.wallet, &stake_record);
 

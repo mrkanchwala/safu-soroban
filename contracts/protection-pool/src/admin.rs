@@ -98,8 +98,20 @@ pub fn unpause(env: &Env) {
 /// already-Active claim kept streaming, completely unaffected by a
 /// suspension applied after the fact. `claim.rs`'s `approve_claim` and
 /// `claim_stream` now both check `suspended` directly, so this same
-/// `suspended = true` flag now also freezes an in-progress claim — no
-/// change needed here, the enforcement lives on the read side.
+/// `suspended = true` flag now also freezes an in-progress claim.
+///
+/// CORRECTED 2026-07-22 (adversarial /audit-chain re-review, same day):
+/// the original fix above was still dead on arrival — this function's
+/// pre-existing `if record.withdrawn { panic! }` guard meant admin could
+/// NEVER reach `suspend_stake` on a stake that had already forfeited via
+/// `approve_claim`/an override, which is exactly the Active/streaming
+/// case the upgrade was meant to reach. `withdrawn` serves double duty in
+/// this contract (a genuinely-done voluntary exit, OR forfeiture from an
+/// in-progress claim) — the guard needs to allow the second case and
+/// still block the first. `active_claim_id` is what actually
+/// distinguishes them: `Some` means a live claim still exists (still
+/// suspendable), `None` means the wallet is genuinely finished (nothing
+/// left to freeze).
 pub fn suspend_stake(env: &Env, wallet: &Address) {
     let admin = storage::get_admin(env);
     admin.require_auth();
@@ -108,7 +120,7 @@ pub fn suspend_stake(env: &Env, wallet: &Address) {
     if record.amount <= 0 {
         panic!("SAFU: no stake");
     }
-    if record.withdrawn {
+    if record.withdrawn && record.active_claim_id.is_none() {
         panic!("SAFU: already withdrawn");
     }
     record.suspended = true;
@@ -126,6 +138,16 @@ pub fn suspend_stake(env: &Env, wallet: &Address) {
 /// staker's favor. A no-op on the clock if `claim_id` is `None`, the
 /// claim doesn't exist, or it's in neither AwaitingApproval nor Active
 /// (nothing to reset) — admin can still unsuspend freely in those cases.
+///
+/// CORRECTED 2026-07-22 (adversarial /audit-chain re-review, same day):
+/// the original version never checked `claim.wallet == wallet` — an
+/// admin passing a mismatched claim_id would reset an unrelated wallet's
+/// deadline instead of (or as well as) the one actually being
+/// unsuspended. Only exploitable by the admin key itself (already fully
+/// trusted throughout this contract — cancel_claim, suspend_stake, etc.
+/// all assume a non-malicious admin), so LOW severity, but cheap and
+/// worth closing: skip the reset silently on a mismatch rather than
+/// acting on the wrong wallet's claim.
 pub fn unsuspend_stake(env: &Env, wallet: &Address, claim_id: Option<BytesN<32>>) {
     let admin = storage::get_admin(env);
     admin.require_auth();
@@ -139,6 +161,9 @@ pub fn unsuspend_stake(env: &Env, wallet: &Address, claim_id: Option<BytesN<32>>
 
     if let Some(id) = claim_id {
         if let Some(mut claim) = storage::get_claim(env, &id) {
+            if &claim.wallet != wallet {
+                return;
+            }
             let now_ledger = env.ledger().sequence();
             match claim.status {
                 ClaimStatus::AwaitingApproval => {
