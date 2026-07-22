@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use soroban_sdk::testutils::Address as _;
-use soroban_sdk::Address;
+use soroban_sdk::testutils::{Address as _, Events as _};
+use soroban_sdk::{Address, IntoVal};
 
 use super::common::*;
 use crate::types::ClaimStatus;
@@ -848,6 +848,81 @@ fn active_claim_with_entitlement(
     );
     s.client.approve_claim(&claim_id);
     (staker, ben, claim_id)
+}
+
+/// Mutation-testing gap fix (2026-07-22 re-run). Kills claim.rs:443
+/// (`>`->`>=`) — at exactly the deadline ledger the window has NOT yet
+/// expired (only strictly-after should panic); the mutant would
+/// incorrectly reject a valid on-time approval.
+#[test]
+fn approve_claim_at_exactly_deadline_succeeds() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    advance_days(&env, 100); // exactly APPROVE_WINDOW_LEDGERS later
+    s.client.approve_claim(&claim_id); // must NOT panic
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Active);
+}
+
+/// Kills claim.rs:208 x2 (`+`->`-`, `+`->`*` in `lifetime_balance = banked
+/// + points`). Storage is unconditionally zeroed on burn regardless of
+/// this sum's correctness, so the only observable surface is the
+/// `ClaimApproved` event's `points_burned` field — read directly rather
+/// than via a storage getter. Uses a withdraw-then-restake cycle so BOTH
+/// `banked` (from cycle 1) and `points` (cycle 2, freshly accrued) are
+/// nonzero and equal (720 each), making a subtraction (0) or
+/// multiplication (518,400) trivially distinguishable from the correct
+/// sum (1,440).
+#[test]
+fn approve_claim_burns_prior_banked_plus_new_points_exactly() {
+    let env = new_env();
+    let s = setup(&env);
+    let beneficiary = Address::generate(&env);
+    let staker = new_funded_address(&env, &s, MID_STAKE);
+    s.client.stake(&staker, &MID_STAKE, &beneficiary);
+    advance_days(&env, 90); // cycle 1: 90 days accrued -> 720 points
+    s.client.withdraw(&staker, &beneficiary); // banks 720, amount -> 0
+
+    s.token_admin.mint(&staker, &MID_STAKE); // withdraw paid the beneficiary, refund staker
+    s.client.stake(&staker, &MID_STAKE, &beneficiary); // fresh record
+    advance_days(&env, 90); // cycle 2: another 90 days -> another 720 points
+
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    s.client.approve_claim(&claim_id);
+
+    let events = env.events().all();
+    let event = events.events().last().unwrap();
+    let data_scval = match &event.body {
+        soroban_sdk::xdr::ContractEventBody::V0(v0) => &v0.data,
+    };
+    let xdr_bytes = soroban_sdk::xdr::WriteXdr::to_xdr(data_scval, soroban_sdk::xdr::Limits::none())
+        .unwrap();
+    let bytes = soroban_sdk::Bytes::from_slice(&env, &xdr_bytes);
+    let data_val: soroban_sdk::Val = soroban_sdk::xdr::FromXdr::from_xdr(&env, &bytes).unwrap();
+    let data_map: soroban_sdk::Map<soroban_sdk::Symbol, soroban_sdk::Val> =
+        data_val.into_val(&env);
+    let points_burned: i128 = data_map
+        .get(soroban_sdk::Symbol::new(&env, "points_burned"))
+        .unwrap()
+        .into_val(&env);
+    assert_eq!(points_burned, 1_440); // 720 + 720, not 0 (sub) or 518,400 (mul)
 }
 
 #[test]

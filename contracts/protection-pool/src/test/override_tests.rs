@@ -355,6 +355,36 @@ fn cancel_pending_override_after_execution_panics() {
     s.client.cancel_pending_override(&s.admin, &staker, &hash);
 }
 
+/// Mutation-testing gap fix (2026-07-22 re-run). Kills claim.rs:827
+/// (`||`->`&&`) — collapses the 3-way status check to effectively
+/// Active-only, which would silently skip releasing `total_allocated` for
+/// an AwaitingApproval claim being overridden, double-counting the
+/// reservation instead of replacing it.
+#[test]
+fn override_on_awaiting_approval_claim_releases_prior_reservation() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let hash = tx_hash(&env, 1);
+    advance_days(&env, 90); // gate met -> submit_claim lands AwaitingApproval directly
+    let claim_id = s
+        .client
+        .submit_claim(&s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::AwaitingApproval);
+    assert_eq!(s.client.get_total_allocated(), ENTITLEMENT);
+
+    let smaller = 700_000i128;
+    s.client
+        .approve_override(&s.admin, &staker, &hash, &smaller, &TIER_C);
+    s.client
+        .approve_override(&s.co_signer, &staker, &hash, &smaller, &TIER_C);
+
+    // Old AwaitingApproval reservation released, only the override's own
+    // entitlement remains allocated — not the sum of both.
+    assert_eq!(s.client.get_total_allocated(), smaller);
+}
+
 #[test]
 fn cancel_active_claim_then_override_does_not_double_release_allocation() {
     // Regression test for a real bug found reading V8 directly

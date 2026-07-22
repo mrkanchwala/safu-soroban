@@ -62,4 +62,24 @@ exclude_re = [
     # amount==0 ⇒ withdrawn==true invariant as the lib.rs views above.
     # LINE-NUMBER SENSITIVE: re-anchor if stake.rs lines shift.
     "stake\\.rs:126:.*replace > with >= in stake",
+
+    # 11th exclusion, added 2026-07-22 after the points-burn-mechanism
+    # mutation re-run (485 mutants, 10 missed — 9 real gaps closed with
+    # new tests, this is the 10th). lib.rs get_points_balance: `record
+    # .amount > 0 && !record.withdrawn` → `||`. Verified equivalent by
+    # full truth-table walk, NOT the same reasoning as the entry above
+    # (that one relies on amount==0 being unreachable with withdrawn==
+    # false; this mutant's only reachable divergent state is the OTHER
+    # direction — amount > 0 with withdrawn == true, now reachable since
+    # 2026-07-22's claim-forfeiture path sets withdrawn=true without
+    # zeroing amount). In that state the `&&`/`||` mutation genuinely
+    # takes different branches (skip vs. live-compute) — but
+    # compute_points_for_record's OWN entry guard (excluded above)
+    # independently returns 0 whenever withdrawn==true, and activate_claim
+    # unconditionally zeroes the banked balance in the same transaction
+    # that sets withdrawn=true. So the correct branch (banked, always 0
+    # here) and the mutant's branch (live-compute, also forced to 0 by
+    # the inner guard) produce the IDENTICAL return value in every
+    # reachable state — no test can distinguish them.
+    "replace && with \\|\\| in ProtectionPool::get_points_balance",
 ]

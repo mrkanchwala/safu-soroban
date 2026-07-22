@@ -248,6 +248,65 @@ fn suspend_stake_on_nonexistent_stake_panics() {
     s.client.suspend_stake(&random);
 }
 
+/// Mutation-testing gap fix (2026-07-22 re-run, 485 mutants, 10 missed).
+/// Kills admin.rs:164 (`!=`->`==`, which would return early even on a
+/// MATCHING wallet and skip the reset entirely), admin.rs:169 (deleted
+/// AwaitingApproval match arm), and admin.rs:170 x2 (`+`->`-`/`+`->`*` on
+/// the deadline arithmetic) — the exact-value assertion below catches all
+/// three, since any of them leaves `approve_deadline_ledger` at something
+/// other than `now + APPROVE_WINDOW_LEDGERS`.
+#[test]
+fn unsuspend_stake_resets_rule_a_deadline_for_awaiting_approval() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &1_000_000,
+        &3,
+        &now_ts(&env),
+    );
+    s.client.suspend_stake(&staker);
+    advance_days(&env, 50); // partway into the 100-day approve window
+    s.client.unsuspend_stake(&staker, &Some(claim_id.clone()));
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    let expected = env.ledger().sequence() + crate::types::APPROVE_WINDOW_LEDGERS;
+    assert_eq!(claim.approve_deadline_ledger, expected);
+}
+
+/// Kills admin.rs:173 (deleted Active match arm) — same wallet-ownership
+/// check as the AwaitingApproval test above also runs through this path,
+/// but the Active branch's clock reset is independently gapped: without
+/// it, `last_collected_ledger` would stay at its pre-suspend value instead
+/// of resetting to the unsuspend moment.
+#[test]
+fn unsuspend_stake_resets_rule_b_clock_for_active_claim() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, ben) = staked_wallet(&env, &s);
+    advance_days(&env, 90);
+    let claim_id = s.client.submit_claim(
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &1_000_000,
+        &3,
+        &now_ts(&env),
+    );
+    s.client.approve_claim(&claim_id); // -> Active, cooldown starts
+    advance_days(&env, 7); // cooldown passes
+    advance_days(&env, 10); // partway into vesting/collection
+    s.client.claim_stream(&claim_id, &ben);
+    s.client.suspend_stake(&staker);
+    advance_days(&env, 20);
+    s.client.unsuspend_stake(&staker, &Some(claim_id.clone()));
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.last_collected_ledger, env.ledger().sequence());
+}
+
 #[test]
 #[should_panic(expected = "SAFU: no stake")]
 fn suspend_stake_after_withdraw_panics() {
