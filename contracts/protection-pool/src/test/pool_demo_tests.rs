@@ -21,60 +21,14 @@
 //!   `submit_claim`, `approve_claim`, `claim_stream`) are exercised.
 
 use soroban_sdk::Env;
-use std::{format, println, string::{String, ToString}, thread, time::Duration};
+use std::{format, println, string::ToString};
 
 use super::common::*;
 use crate::types::ClaimStatus;
 
-/// Paces printed output for video recording -- without this, `cargo test
-/// -- --nocapture` dumps the whole lifecycle instantly, too fast to
-/// follow on screen.
-fn pause() {
-    thread::sleep(Duration::from_millis(500));
-}
-
 const TIER_A: u32 = 1;
 const TIER_B: u32 = 2;
 const TIER_C: u32 = 3;
-const STROOPS_PER_XLM: i128 = 10_000_000;
-
-/// Real Tranche 1 deploy value (README "Deploy-time arguments"): 600,000
-/// XLM, matching the live testnet contract's actual pool cap.
-const DEMO_POOL_CAP: i128 = 6_000_000_000_000;
-
-fn max_stake(pool_cap: i128) -> i128 {
-    pool_cap * 125 / 10_000
-}
-
-/// Whole-XLM, comma-separated amount for readable presentation output
-/// (e.g. `500_000_000_000` stroops -> "50,000"). All demo amounts are
-/// round XLM multiples, so integer division here is exact.
-fn xlm(stroops: i128) -> String {
-    let whole = stroops / STROOPS_PER_XLM;
-    let digits = whole.to_string();
-    let mut grouped = String::new();
-    for (i, c) in digits.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            grouped.push(',');
-        }
-        grouped.push(c);
-    }
-    grouped.chars().rev().collect()
-}
-
-fn print_solvency(env: &Env, s: &Setup<'_>, label: &str) {
-    let staked = s.client.get_total_staked();
-    let allocated = s.client.get_total_allocated();
-    println!(
-        "         Pool solvency [{}]: allocated {} XLM <= staked {} XLM -> {}",
-        label,
-        xlm(allocated),
-        xlm(staked),
-        if allocated <= staked { "OK" } else { "VIOLATION" }
-    );
-    pause();
-    let _ = env;
-}
 
 struct DemoResult {
     label: &'static str,
@@ -132,7 +86,7 @@ fn run_dummy_attack(
         xlm(expected_entitlement)
     );
     pause();
-    print_solvency(env, s, label);
+    print_solvency(s, label);
 
     advance_days(env, 7); // mandatory cooldown
     advance_days(env, 45); // fully vested
@@ -157,7 +111,7 @@ fn run_dummy_attack(
         xlm(streamed)
     );
     pause();
-    print_solvency(env, s, label);
+    print_solvency(s, label);
 
     DemoResult {
         label,
@@ -209,7 +163,7 @@ fn full_pool_lifecycle_demo() {
         xlm(stake_amount * 60)
     );
     pause();
-    print_solvency(&env, &s, "pool funded");
+    print_solvency(&s, "pool funded");
 
     // A dummy loss bigger than Tier C's cap but smaller than A/B's caps,
     // so the same "attack" size produces a tier-differentiated result:
