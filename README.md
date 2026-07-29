@@ -8,14 +8,40 @@ mechanics, ported wholesale from V8. Yield deployment (Lido wstETH on V8,
 DeFindex/Blend planned for Tranche 2) is deliberately excluded from this
 scope.
 
+**Scope note:** this repo is the on-chain `ProtectionPool` contract only.
+SAFU's fraud-detection scanner, the system that decides whether a given
+transaction qualifies as a wallet drain, is a separate, proprietary asset.
+Its code, logic, and signal weights are not included, referenced, or
+reproduced anywhere in this repository.
+
 **Status:** core mechanics complete and tested (178 unit tests, 97.47%
 line coverage, 100% of catchable mutants killed — both confirmed
 2026-07-22 against the current code, see `TESTING.md` for the full
 methodology), compiles to WASM
 (`cargo build --release --target wasm32v1-none`), `/audit-chain` +
 `/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM — see `audits/`),
-**not yet deployed anywhere** — deployment is gated on resolving one
-open item with the SCF team (see below).
+**deployed to Stellar testnet** — contract ID
+`CCQT2VRONZTE5ODBNM3XAQWUPQRLKGMU4MMLA2JK6HJHJMK34Q7ZFTGJ` (see
+"Testnet deployment" below).
+
+## Testnet deployment
+
+Deployed and initialized on Stellar testnet, 2026-07-29:
+
+- **Contract ID:** `CCQT2VRONZTE5ODBNM3XAQWUPQRLKGMU4MMLA2JK6HJHJMK34Q7ZFTGJ`
+  ([Stellar Expert](https://stellar.expert/explorer/testnet/contract/CCQT2VRONZTE5ODBNM3XAQWUPQRLKGMU4MMLA2JK6HJHJMK34Q7ZFTGJ))
+- **Deploy tx:** [`eec5cadee7b7...`](https://stellar.expert/explorer/testnet/tx/eec5cadee7b7f836479c0131a1e666fd6f2a07affe835b5c6b9b97e7fe0822dd)
+- **Initialize tx:** [`7c37662f87df...`](https://stellar.expert/explorer/testnet/tx/7c37662f87df89397e66927fd4e4355cca2eb9aa27d9f870b0ed08f0b6bd82b6)
+- **Pool cap:** 600,000 XLM (`6_000_000_000_000` stroops) — the intended
+  Tranche 1 deploy value (see "Deploy-time arguments" below).
+- **XLM asset:** native testnet SAC
+  `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`
+- **Admin / oracle / co-signer:** fresh testnet identities generated for
+  this deployment — public addresses only, no private keys are shared
+  here or anywhere in this repository.
+
+Verified live immediately after initialization: `get_total_staked()`
+returns `0`, `is_paused()` returns `false`.
 
 ## Protection pool or Stellar integration? (SCF #44 reviewer response)
 
