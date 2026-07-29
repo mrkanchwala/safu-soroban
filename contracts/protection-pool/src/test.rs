@@ -11,6 +11,7 @@ mod claim_tests;
 mod common;
 mod mutation_gap_tests;
 mod override_tests;
+mod pool_demo_tests;
 mod profiling_tests;
 mod solvency_tests;
 mod stake_tests;
