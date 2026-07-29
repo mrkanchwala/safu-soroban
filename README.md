@@ -215,6 +215,57 @@ pub enum DataKey {
   module doc comment for the full account of what was wrong and what was
   fixed.
 
+## Blend/YieldBlox illustrative scenario (SCF #44 reviewer response)
+
+Addresses the SCF #44 reviewer comment asking for "a Blend exploit
+analysis with simulations showing how the protocol would have helped in
+a real incident."
+
+**Disclosure — read before anything else:**
+- This is a simulation against a real historical incident, **not** an
+  existing or pending relationship with Blend/YieldBlox. SAFU has no live
+  protocol-level pool product, and Blend/YieldBlox is not a SAFU
+  depositor or partner.
+- No scanner detection logic is used, implied, or reproduced anywhere
+  here. Whether a transaction is "drain-shaped" is asserted as a labeled
+  fixture input in the tests below — never a computed scanner verdict.
+  SAFU's actual scanner (what decides whether a real transaction fires)
+  is proprietary and lives entirely off-chain, in a separate private repo.
+- Only the public entitlement formula (`entitlement = min(stake ×
+  tier_ratio, loss)` — 15x/10x/5x by tier, already SAFU's own published
+  protocol mechanic) is exercised, run through the real, audited on-chain
+  `submit_claim` → `approve_claim` → `claim_stream` entrypoints — not a
+  re-derivation or approximation.
+- This section demonstrates the payout mechanism only. It is not this
+  repo's answer to whether SAFU is fundamentally a staking product or a
+  Stellar integration (a separate reviewer comment) — that's addressed
+  independently.
+
+**Incident:** Blend/YieldBlox, Stellar, oracle manipulation, real tx
+`3e81a3f7b6e17cc22d0a1f33e9dcf90e5664b125b9e61f108b8d2f082f2d4657`
+(independently verified against Horizon 2026-07-22) — ~$10.8M loss,
+publicly reported, not proprietary.
+
+**What the tests demonstrate** (`src/test/blend_scenario_tests.rs`,
+run with `cargo test --package protection-pool blend_scenario --
+--nocapture`): a staker at the contract's own real `MAX_STAKE` bound
+(1.25% of pool cap — "$1M" in this scenario's illustrative $-mapping,
+pool cap = "$100M") submits a claim carrying Blend/YieldBlox's real tx
+hash. Tier only changes the entitlement passed in — the real on-chain
+`tier_cap` check is what actually accepts or would reject it, not a mock:
+
+| Tier | Ratio | Coverage cap (stake × ratio) | Entitlement (capped at $10.8M loss) | % of real loss covered |
+|------|-------|------------------------------|--------------------------------------|------------------------|
+| A | 15x | $15.0M | $10.8M | 100% |
+| B | 10x | $10.0M | $10.0M | 92.6% |
+| C | 5x | $5.0M | $5.0M | 46.3% |
+
+A fourth test, `ordinary_transaction_never_becomes_a_claim`, is the
+negative control: an ordinary transaction on the same kind of fixture
+pool/participant never becomes a claim at all — no `submit_claim` call,
+the stake stays fully claim-eligible, nothing is ever earmarked for
+payout. The point is discernment, not "everything pays out."
+
 ## Full technical reference
 
 The complete V8→Soroban mechanics map, SDK reference, vulnerability

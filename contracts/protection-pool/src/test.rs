@@ -6,6 +6,7 @@
 #![cfg(test)]
 
 mod admin_tests;
+mod blend_scenario_tests;
 mod claim_tests;
 mod common;
 mod mutation_gap_tests;
