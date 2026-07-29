@@ -17,6 +17,19 @@ methodology), compiles to WASM
 **not yet deployed anywhere** — deployment is gated on resolving one
 open item with the SCF team (see below).
 
+## Staking product or Stellar integration? (SCF #44 reviewer response)
+
+SAFU's Tranche 1 deliverable, the ProtectionPool contract, is a
+staking-based coverage protocol: participants stake XLM directly into
+the pool, a wallet-drain event triggers a tiered on-chain payout, and
+the staked principal funds it. No external protocol is called from this
+contract.
+
+Tranche 2 adds the Stellar integration: SAFU deploys idle pool capital
+into Blend via DeFindex, and the yield generated becomes protocol
+revenue rather than staker yield. T1 is the protection mechanism; T2 is
+where the integration with an existing Stellar DeFi protocol happens.
+
 ## Building
 
 ```bash
