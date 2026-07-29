@@ -17,18 +17,20 @@ methodology), compiles to WASM
 **not yet deployed anywhere** — deployment is gated on resolving one
 open item with the SCF team (see below).
 
-## Staking product or Stellar integration? (SCF #44 reviewer response)
+## Protection pool or Stellar integration? (SCF #44 reviewer response)
 
 SAFU's Tranche 1 deliverable, the ProtectionPool contract, is a
-staking-based coverage protocol: participants stake XLM directly into
-the pool, a wallet-drain event triggers a tiered on-chain payout, and
-the staked principal funds it. No external protocol is called from this
-contract.
+protection pool, not a staking protocol: participants deposit XLM
+directly into the pool, a wallet-drain event triggers a tiered on-chain
+payout, and the deposited principal funds it. Stellar runs on the
+Stellar Consensus Protocol, not proof-of-stake, so deposits are coverage
+contributions rather than network stakes. No external protocol is
+called from this contract.
 
 Tranche 2 adds the Stellar integration: SAFU deploys idle pool capital
 into Blend via DeFindex, and the yield generated becomes protocol
-revenue rather than staker yield. T1 is the protection mechanism; T2 is
-where the integration with an existing Stellar DeFi protocol happens.
+revenue rather than depositor yield. T1 is the protection mechanism; T2
+is where the integration with an existing Stellar DeFi protocol happens.
 
 ## Building
 
@@ -251,8 +253,8 @@ a real incident."
   re-derivation or approximation.
 - This section demonstrates the payout mechanism only. It is not this
   repo's answer to whether SAFU is fundamentally a staking product or a
-  Stellar integration (a separate reviewer comment) — that's addressed
-  independently.
+  Stellar integration (a separate reviewer comment); that question is
+  addressed in the section above.
 
 **Incident:** Blend/YieldBlox, Stellar, oracle manipulation, real tx
 `3e81a3f7b6e17cc22d0a1f33e9dcf90e5664b125b9e61f108b8d2f082f2d4657`
@@ -261,13 +263,13 @@ publicly reported, not proprietary.
 
 **What the tests demonstrate** (`src/test/blend_scenario_tests.rs`,
 run with `cargo test --package protection-pool blend_scenario --
---nocapture`): a staker at the contract's own real `MAX_STAKE` bound
+--nocapture`): a depositor at the contract's own real `MAX_STAKE` bound
 (1.25% of pool cap — "$1M" in this scenario's illustrative $-mapping,
 pool cap = "$100M") submits a claim carrying Blend/YieldBlox's real tx
 hash. Tier only changes the entitlement passed in — the real on-chain
 `tier_cap` check is what actually accepts or would reject it, not a mock:
 
-| Tier | Ratio | Coverage cap (stake × ratio) | Entitlement (capped at $10.8M loss) | % of real loss covered |
+| Tier | Ratio | Coverage cap (deposit × ratio) | Entitlement (capped at $10.8M loss) | % of real loss covered |
 |------|-------|------------------------------|--------------------------------------|------------------------|
 | A | 15x | $15.0M | $10.8M | 100% |
 | B | 10x | $10.0M | $10.0M | 92.6% |
@@ -276,7 +278,7 @@ hash. Tier only changes the entitlement passed in — the real on-chain
 A fourth test, `ordinary_transaction_never_becomes_a_claim`, is the
 negative control: an ordinary transaction on the same kind of fixture
 pool/participant never becomes a claim at all — no `submit_claim` call,
-the stake stays fully claim-eligible, nothing is ever earmarked for
+the deposit stays fully claim-eligible, nothing is ever earmarked for
 payout. The point is discernment, not "everything pays out."
 
 ## Full technical reference
