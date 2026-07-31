@@ -6,6 +6,17 @@ only (this contract has not been deployed anywhere yet — see
 `README.md`'s "Known open items"). All numbers below are reproducible
 with the commands in each section.
 
+**Updated 2026-07-31** — converted the contract from `panic!("SAFU: ...")`
+string-based error handling to a typed `#[contracterror] PoolError` enum
+(`src/error.rs`, 72 variants) + `Result<T, PoolError>` on every fallible
+public/internal function. Pure error-handling-mechanism refactor: same
+validation conditions, same order, same business logic, zero behavior
+change beyond the failure signal — verified by a full line-by-line diff
+review (zero logic drift found) plus a fresh mutation-testing re-run
+(§3). Triggered by an SCF #44 reviewer's "not much experience with
+Soroban" comment; this was the concrete gap found and closed. This
+update re-measured §1 and §3 against the new code.
+
 **Updated 2026-07-22** — added a points burn-on-claim mechanism (staker-
 gated approval step + two 100-day expiry rules, full detail in `claim.rs`
 module doc comments) and fixed 5 pre-existing accounting bugs found during
@@ -13,7 +24,7 @@ a full-contract review, independent of the new mechanism (see §7 for
 what they were). This update re-measured every section below against the
 new code rather than leaving the 2026-07-15 numbers in place unverified.
 
-## 1. Unit tests — 173 passing (up from 157)
+## 1. Unit tests — 184 passing (up from 173)
 
 ```bash
 cargo test --package protection-pool
@@ -124,6 +135,26 @@ nothing pre-existing regressed. Triaged individually, same method as the
 caught, 0 missed, 14 unviable. Result: 100% of catchable mutants killed,
 confirmed against the current code, not carried forward stale.**
 
+**Re-run against the 2026-07-31 typed-errors-conversion changes:** 485
+mutants (`cargo mutants --no-shuffle --jobs 4`, 89 minutes wall-clock) —
+**470 caught, 14 unviable, 1 missed.** The single survivor
+(`stake.rs:137:28: replace > with >= in stake`, the re-stake guard
+`existing.amount > 0 && !existing.withdrawn`) was not a new gap — it is
+the exact same equivalent mutant excluded above (10th exclusion), which
+had been anchored to line 126 pre-conversion; the refactor's new imports/
+doc comments/signature changes shifted the line to 137, so the old
+line-specific regex stopped matching it. Re-triaged from scratch (not
+assumed equivalent just because it matched a known pattern): confirmed
+by the identical reasoning as the original exclusion — `amount == 0`
+implies `withdrawn == true` in every reachable state, so the `!withdrawn`
+conjunct already excludes the boundary the `>=` mutant would newly admit.
+`.cargo/mutants.toml`'s line anchor updated to 137 (commit `562ddc7`) —
+not re-run after the fix, since the fix is a config correction to an
+already-proven-equivalent mutant, not a code change requiring
+re-verification. **Result: every one of the 485 mutants that could
+possibly be caught, was — no regression from the error-handling
+refactor.**
+
 ## 4. Fuzzing — 2 targets, 2 independent environments, 53,588+37,943 runs
 
 ```bash
@@ -175,12 +206,13 @@ cargo audit
 grep -rn "unsafe" --include="*.rs" src/
 ```
 
-- **clippy:** 0 warnings (re-checked 2026-07-22 against the full updated
-  codebase — the 1 prior trivial style warning was fixed in a later
-  commit before this update).
+- **clippy:** 0 warnings (re-checked 2026-07-31 against the typed-errors-
+  conversion code — unchanged from 2026-07-22; 3 unrelated pre-existing
+  doc-comment style warnings in a test file, not from this change).
 - **cargo-audit (RUSTSEC advisory database):** 0 CVEs (re-checked
-  2026-07-22, unchanged). 1 unmaintained-crate notice (`paste`, a
-  transitive `soroban-sdk` dependency — not directly actionable).
+  2026-07-31 on the VPS, unchanged). 1 unmaintained-crate notice
+  (`paste`, a transitive `soroban-sdk` dependency — not directly
+  actionable).
 - **`unsafe` blocks:** zero, confirmed by grep.
 - **Arithmetic safety:** the contract uses plain `+`/`*`/`/` rather than
   `checked_*` throughout — verified safe because the workspace

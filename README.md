@@ -14,15 +14,18 @@ transaction qualifies as a wallet drain, is a separate, proprietary asset.
 Its code, logic, and signal weights are not included, referenced, or
 reproduced anywhere in this repository.
 
-**Status:** core mechanics complete and tested (178 unit tests, 97.47%
-line coverage, 100% of catchable mutants killed, both confirmed
-2026-07-22 against the current code, see `TESTING.md` for the full
+**Status:** core mechanics complete and tested (184 unit tests, 97.47%
+line coverage, 100% of catchable mutants killed — re-confirmed
+2026-07-31 with a fresh 485-mutant run, see `TESTING.md` for the full
 methodology), compiles to WASM
 (`cargo build --release --target wasm32v1-none`), `/audit-chain` +
 `/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM, see `audits/`),
 **deployed to Stellar testnet**, contract ID
 `CCQT2VRONZTE5ODBNM3XAQWUPQRLKGMU4MMLA2JK6HJHJMK34Q7ZFTGJ` (see
-"Testnet deployment" below).
+"Testnet deployment" below). **Error handling:** every public entrypoint
+returns `Result<T, PoolError>` via a typed `#[contracterror]` enum
+(`src/error.rs`) rather than raw panics — converted 2026-07-31, see
+"Error handling" below.
 
 ## Testnet deployment
 
@@ -62,7 +65,7 @@ is where the integration with an existing Stellar DeFi protocol happens.
 
 ```bash
 cargo check --package protection-pool          # fast type/logic check
-cargo test --package protection-pool           # 173 unit tests
+cargo test --package protection-pool           # 184 unit tests
 cargo build --package protection-pool --release --target wasm32v1-none
 stellar contract build --optimize              # or: stellar contract optimize --wasm <path>
 ```
@@ -133,6 +136,19 @@ admin-adjustable afterward via `set_pool_cap` (mirrors V8's mutable
 `maxPoolSize`). The intended Tranche 1 deploy value: **600,000 XLM**
 (approximating V8's 60 ETH cap) = `6_000_000_000_000` stroops
 (1 XLM = 10,000,000 stroops).
+
+## Error handling
+
+Every fallible public entrypoint returns `Result<T, PoolError>` — a typed
+`#[contracterror]` enum (`src/error.rs`, 72 variants) — instead of
+`panic!`, the standard modern Soroban convention. Callers get a typed
+error code, not just an opaque host trap. Converted 2026-07-31 from an
+earlier all-`panic!` version: same validation conditions, same order,
+same business logic, verified via a full line-by-line diff review (zero
+logic drift) plus a fresh 485-mutant re-run (§3 of `TESTING.md`) — the
+conversion changed the failure *signal* only. Test callers use the
+SDK-generated `try_X()` client methods; the plain `X()` methods still
+auto-unwrap/panic on `Err`, so no caller ergonomics changed either.
 
 ## Contract layout
 
@@ -244,9 +260,9 @@ pub enum DataKey {
   read as meaning the actual mechanic, not the grant text's simplified
   description). Not yet raised with the SCF team.
 - **No Halmos-equivalent exists for Soroban.** The solvency invariant and
-  claim state machine rest on test coverage (178 unit tests, 97.47% line
-  coverage, 100% of catchable mutants killed, confirmed 2026-07-22
-  against the current code) and 133,672 fuzz runs
+  claim state machine rest on test coverage (184 unit tests, 97.47% line
+  coverage, 100% of catchable mutants killed, re-confirmed 2026-07-31
+  against the typed-error-conversion code) and 133,672 fuzz runs
   across two targets and multiple environments, rather than symbolic
   proof. See `TESTING.md` for the full methodology. Certora Sunbeam (the
   real ecosystem tool) is deliberately deferred to Tranche 3's SCF-funded
