@@ -88,20 +88,29 @@ impl ProtectionPool {
 
     // -- stake / withdraw --
 
-    pub fn stake(env: Env, staker: Address, amount: i128, beneficiary: Address) {
-        stake::stake(&env, &staker, amount, &beneficiary);
+    pub fn stake(
+        env: Env,
+        staker: Address,
+        amount: i128,
+        beneficiary: Address,
+    ) -> Result<(), PoolError> {
+        stake::stake(&env, &staker, amount, &beneficiary)
     }
 
-    pub fn withdraw(env: Env, staker: Address, beneficiary: Address) {
-        stake::withdraw(&env, &staker, &beneficiary);
+    pub fn withdraw(env: Env, staker: Address, beneficiary: Address) -> Result<(), PoolError> {
+        stake::withdraw(&env, &staker, &beneficiary)
     }
 
-    pub fn set_beneficiary(env: Env, staker: Address, new_beneficiary: Address) {
-        stake::set_beneficiary(&env, &staker, &new_beneficiary);
+    pub fn set_beneficiary(
+        env: Env,
+        staker: Address,
+        new_beneficiary: Address,
+    ) -> Result<(), PoolError> {
+        stake::set_beneficiary(&env, &staker, &new_beneficiary)
     }
 
-    pub fn emergency_exit(env: Env, staker: Address) {
-        stake::emergency_exit(&env, &staker);
+    pub fn emergency_exit(env: Env, staker: Address) -> Result<(), PoolError> {
+        stake::emergency_exit(&env, &staker)
     }
 
     // -- claims --

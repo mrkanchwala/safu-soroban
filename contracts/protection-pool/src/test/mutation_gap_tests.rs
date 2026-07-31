@@ -17,6 +17,7 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::Address;
 
 use super::common::*;
+use crate::error::PoolError;
 
 const ENTITLEMENT: i128 = 1_000_000;
 const TIER_B: u32 = 2;
@@ -592,7 +593,6 @@ fn stake_filling_pool_cap_exactly_succeeds() {
 /// must panic.
 /// Kills stake.rs:134:30 (>→==).
 #[test]
-#[should_panic(expected = "SAFU: pool cap exceeded")]
 fn stake_overshooting_pool_cap_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -601,7 +601,8 @@ fn stake_overshooting_pool_cap_panics() {
     // 100M + 1M = 101M > 100.5M (and ≠ 100.5M — kills the == mutant).
     let w2 = new_funded_address(&env, &s, 1_000_000);
     let b2 = Address::generate(&env);
-    s.client.stake(&w2, &1_000_000, &b2);
+    let result = s.client.try_stake(&w2, &1_000_000, &b2);
+    assert_eq!(result, Err(Ok(PoolError::PoolCapExceeded)));
 }
 
 /// Staker count increments by exactly 1 per stake.
@@ -621,7 +622,6 @@ fn total_stakers_increments_exactly() {
 /// instead would mean the || in the guard degraded to &&.
 /// Kills stake.rs:276:27 (||→&&).
 #[test]
-#[should_panic(expected = "SAFU: no active stake")]
 fn emergency_exit_after_forfeiture_fails_on_active_stake_guard() {
     let env = new_env();
     let s = setup(&env);
@@ -632,8 +632,9 @@ fn emergency_exit_after_forfeiture_fails_on_active_stake_guard() {
     advance_days(&env, 7);
     advance_days(&env, 45);
     s.client.claim_stream(&claim_id, &ben); // Completed
-    // Record: amount 100M > 0, withdrawn=true → "no active stake".
-    s.client.emergency_exit(&staker);
+    // Record: amount 100M > 0, withdrawn=true → PoolError::NoActiveStake.
+    let result = s.client.try_emergency_exit(&staker);
+    assert_eq!(result, Err(Ok(PoolError::NoActiveStake)));
 }
 
 /// emergency_exit decrements total_staked by exactly the exiting amount.
@@ -658,7 +659,6 @@ fn emergency_exit_decrements_total_staked_exactly() {
 /// have expired).
 /// Kills types.rs:40:43 (*→+ in PENALTY_LOCK_LEDGERS).
 #[test]
-#[should_panic(expected = "SAFU: penalty lock active")]
 fn penalty_lock_still_active_after_two_days() {
     let env = new_env();
     let s = setup(&env);
@@ -678,7 +678,8 @@ fn penalty_lock_still_active_after_two_days() {
     s.client.approve_claim(&claim_id);
     s.client.cancel_claim(&claim_id); // restores stake + penalty lock
     advance_days(&env, 2);
-    s.client.withdraw(&staker, &ben);
+    let result = s.client.try_withdraw(&staker, &ben);
+    assert_eq!(result, Err(Ok(PoolError::PenaltyLockActive)));
 }
 
 // -----------------------------------------------------------------------
