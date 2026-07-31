@@ -4,6 +4,7 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::Address;
 
 use super::common::*;
+use crate::error::PoolError;
 use crate::types::ClaimStatus;
 
 const ENTITLEMENT: i128 = 1_000_000;
@@ -256,7 +257,6 @@ fn override_on_completed_claim_panics() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: coSigner cannot equal admin")]
 fn cosigner_cannot_be_set_equal_to_admin() {
     // Corrected 2026-07-14 — a full re-read of V8's setCoSigner found it
     // DOES check `newCoSigner != owner()` (this test previously assumed
@@ -270,7 +270,8 @@ fn cosigner_cannot_be_set_equal_to_admin() {
     // for exact parity rather than removed.
     let env = new_env();
     let s = setup(&env);
-    s.client.set_co_signer(&s.admin);
+    let result = s.client.try_set_co_signer(&s.admin);
+    assert_eq!(result, Err(Ok(PoolError::CoSignerEqualsAdmin)));
 }
 
 // -----------------------------------------------------------------------

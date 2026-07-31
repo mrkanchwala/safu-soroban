@@ -3,9 +3,17 @@
 //! request/approval flow lives in claim.rs instead (Task 3) — it operates
 //! on Claim/OverrideRequest records and is conceptually part of the
 //! claims subsystem, not admin config.
+//!
+//! CONVERTED 2026-07-31: `panic!("SAFU: ...")` -> `Result<_, PoolError>`.
+//! Every function that used to trap now returns `Err(PoolError::...)` on
+//! the same conditions, in the same order, with no behavior change beyond
+//! the caller now getting a typed error code instead of an opaque panic
+//! message. See `error.rs` for the enum + `outputs/2026-07-31_plan-eng-review-
+//! safu-soroban-typed-errors.md` (research-ops repo) for why.
 
 use soroban_sdk::{Address, BytesN, Env};
 
+use crate::error::PoolError;
 use crate::storage;
 use crate::types::{ClaimStatus, StakeRecord, APPROVE_WINDOW_LEDGERS};
 
@@ -24,22 +32,22 @@ pub fn initialize(
     co_signer: &Address,
     xlm_token: &Address,
     pool_cap: i128,
-) {
+) -> Result<(), PoolError> {
     if env.storage().instance().has(&crate::storage::DataKey::Admin) {
-        panic!("SAFU: already initialized");
+        return Err(PoolError::AlreadyInitialized);
     }
     // V8 (S4 audit checklist item): oracle != coSigner enforced at
     // construction and at every setter. V8 constructor also requires
     // coSigner != owner (msg.sender) — missing from the first build pass,
     // found on full source read (2026-07-14).
     if oracle == co_signer {
-        panic!("SAFU: oracle cannot equal coSigner");
+        return Err(PoolError::OracleEqualsCoSigner);
     }
     if co_signer == admin {
-        panic!("SAFU: coSigner must differ from admin");
+        return Err(PoolError::CoSignerEqualsAdmin);
     }
     if pool_cap <= 0 {
-        panic!("SAFU: pool cap must be positive");
+        return Err(PoolError::PoolCapNotPositive);
     }
 
     admin.require_auth();
@@ -54,22 +62,24 @@ pub fn initialize(
     storage::set_total_stakers(env, 0);
     storage::set_paused(env, false);
     storage::bump_instance_ttl(env);
+    Ok(())
 }
 
 /// V8: transferOwnership override — new admin cannot equal coSigner. No
 /// renounce equivalent is provided (V8 overrides renounceOwnership to
 /// always revert — the absence of a renounce function here achieves the
 /// same "cannot renounce" outcome by construction, not by omission).
-pub fn transfer_admin(env: &Env, new_admin: &Address) {
+pub fn transfer_admin(env: &Env, new_admin: &Address) -> Result<(), PoolError> {
     let admin = storage::get_admin(env);
     admin.require_auth();
 
     let co_signer = storage::get_co_signer(env);
     if new_admin == &co_signer {
-        panic!("SAFU: new admin cannot equal coSigner");
+        return Err(PoolError::NewAdminEqualsCoSigner);
     }
     storage::set_admin(env, new_admin);
     storage::bump_instance_ttl(env);
+    Ok(())
 }
 
 /// V8: pause()/unpause() — Pausable circuit breaker, admin-only. Blocks
@@ -112,19 +122,20 @@ pub fn unpause(env: &Env) {
 /// distinguishes them: `Some` means a live claim still exists (still
 /// suspendable), `None` means the wallet is genuinely finished (nothing
 /// left to freeze).
-pub fn suspend_stake(env: &Env, wallet: &Address) {
+pub fn suspend_stake(env: &Env, wallet: &Address) -> Result<(), PoolError> {
     let admin = storage::get_admin(env);
     admin.require_auth();
 
-    let mut record: StakeRecord = storage::get_stake(env, wallet).expect("SAFU: no stake");
+    let mut record: StakeRecord = storage::get_stake(env, wallet).ok_or(PoolError::NoStake)?;
     if record.amount <= 0 {
-        panic!("SAFU: no stake");
+        return Err(PoolError::NoStake);
     }
     if record.withdrawn && record.active_claim_id.is_none() {
-        panic!("SAFU: already withdrawn");
+        return Err(PoolError::AlreadyWithdrawn);
     }
     record.suspended = true;
     storage::set_stake(env, wallet, &record);
+    Ok(())
 }
 
 /// CHANGED 2026-07-22 (eng review blocker #1): takes an optional
@@ -148,13 +159,17 @@ pub fn suspend_stake(env: &Env, wallet: &Address) {
 /// all assume a non-malicious admin), so LOW severity, but cheap and
 /// worth closing: skip the reset silently on a mismatch rather than
 /// acting on the wrong wallet's claim.
-pub fn unsuspend_stake(env: &Env, wallet: &Address, claim_id: Option<BytesN<32>>) {
+pub fn unsuspend_stake(
+    env: &Env,
+    wallet: &Address,
+    claim_id: Option<BytesN<32>>,
+) -> Result<(), PoolError> {
     let admin = storage::get_admin(env);
     admin.require_auth();
 
-    let mut record: StakeRecord = storage::get_stake(env, wallet).expect("SAFU: no stake");
+    let mut record: StakeRecord = storage::get_stake(env, wallet).ok_or(PoolError::NoStake)?;
     if record.amount <= 0 {
-        panic!("SAFU: no stake");
+        return Err(PoolError::NoStake);
     }
     record.suspended = false;
     storage::set_stake(env, wallet, &record);
@@ -162,7 +177,7 @@ pub fn unsuspend_stake(env: &Env, wallet: &Address, claim_id: Option<BytesN<32>>
     if let Some(id) = claim_id {
         if let Some(mut claim) = storage::get_claim(env, &id) {
             if &claim.wallet != wallet {
-                return;
+                return Ok(());
             }
             let now_ledger = env.ledger().sequence();
             match claim.status {
@@ -178,45 +193,48 @@ pub fn unsuspend_stake(env: &Env, wallet: &Address, claim_id: Option<BytesN<32>>
             }
         }
     }
+    Ok(())
 }
 
 /// Mirrors V8's `setPoolSize` — admin-adjustable operational cap.
-pub fn set_pool_cap(env: &Env, new_cap: i128) {
+pub fn set_pool_cap(env: &Env, new_cap: i128) -> Result<(), PoolError> {
     let admin = storage::get_admin(env);
     admin.require_auth();
 
     if new_cap <= 0 {
-        panic!("SAFU: pool cap must be positive");
+        return Err(PoolError::PoolCapNotPositive);
     }
     // Don't allow shrinking below what's already staked — would make the
     // pool immediately "full" or leave min/max stake bounds inconsistent
     // with live state.
     if new_cap < storage::get_total_staked(env) {
-        panic!("SAFU: pool cap below current total staked");
+        return Err(PoolError::PoolCapBelowTotalStaked);
     }
     storage::set_pool_cap(env, new_cap);
     storage::bump_instance_ttl(env);
+    Ok(())
 }
 
-pub fn set_oracle(env: &Env, new_oracle: &Address) {
+pub fn set_oracle(env: &Env, new_oracle: &Address) -> Result<(), PoolError> {
     let admin = storage::get_admin(env);
     admin.require_auth();
 
     let co_signer = storage::get_co_signer(env);
     if new_oracle == &co_signer {
-        panic!("SAFU: oracle cannot equal coSigner");
+        return Err(PoolError::OracleEqualsCoSigner);
     }
     storage::set_oracle(env, new_oracle);
     storage::bump_instance_ttl(env);
+    Ok(())
 }
 
-pub fn set_co_signer(env: &Env, new_co_signer: &Address) {
+pub fn set_co_signer(env: &Env, new_co_signer: &Address) -> Result<(), PoolError> {
     let admin = storage::get_admin(env);
     admin.require_auth();
 
     let oracle = storage::get_oracle(env);
     if new_co_signer == &oracle {
-        panic!("SAFU: coSigner cannot equal oracle");
+        return Err(PoolError::CoSignerEqualsOracle);
     }
     // Found 2026-07-14 via a full re-read of V8's setCoSigner (line 935):
     // it checks `newCoSigner != owner()` too, not just != oracle. Combined
@@ -230,8 +248,9 @@ pub fn set_co_signer(env: &Env, new_co_signer: &Address) {
     // provably cannot occur, kept for exact parity, not because it's
     // reachable).
     if new_co_signer == &admin {
-        panic!("SAFU: coSigner cannot equal admin");
+        return Err(PoolError::CoSignerEqualsAdmin);
     }
     storage::set_co_signer(env, new_co_signer);
     storage::bump_instance_ttl(env);
+    Ok(())
 }

@@ -16,11 +16,14 @@ extern crate std;
 
 mod admin;
 mod claim;
+mod error;
 mod stake;
 mod storage;
 #[cfg(test)]
 mod test;
 mod types;
+
+pub use error::PoolError;
 
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
 
@@ -40,24 +43,24 @@ impl ProtectionPool {
         co_signer: Address,
         xlm_token: Address,
         pool_cap: i128,
-    ) {
-        admin::initialize(&env, &admin, &oracle, &co_signer, &xlm_token, pool_cap);
+    ) -> Result<(), PoolError> {
+        admin::initialize(&env, &admin, &oracle, &co_signer, &xlm_token, pool_cap)
     }
 
-    pub fn set_oracle(env: Env, new_oracle: Address) {
-        admin::set_oracle(&env, &new_oracle);
+    pub fn set_oracle(env: Env, new_oracle: Address) -> Result<(), PoolError> {
+        admin::set_oracle(&env, &new_oracle)
     }
 
-    pub fn set_co_signer(env: Env, new_co_signer: Address) {
-        admin::set_co_signer(&env, &new_co_signer);
+    pub fn set_co_signer(env: Env, new_co_signer: Address) -> Result<(), PoolError> {
+        admin::set_co_signer(&env, &new_co_signer)
     }
 
-    pub fn set_pool_cap(env: Env, new_cap: i128) {
-        admin::set_pool_cap(&env, new_cap);
+    pub fn set_pool_cap(env: Env, new_cap: i128) -> Result<(), PoolError> {
+        admin::set_pool_cap(&env, new_cap)
     }
 
-    pub fn transfer_admin(env: Env, new_admin: Address) {
-        admin::transfer_admin(&env, &new_admin);
+    pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), PoolError> {
+        admin::transfer_admin(&env, &new_admin)
     }
 
     pub fn pause(env: Env) {
@@ -68,15 +71,19 @@ impl ProtectionPool {
         admin::unpause(&env);
     }
 
-    pub fn suspend_stake(env: Env, wallet: Address) {
-        admin::suspend_stake(&env, &wallet);
+    pub fn suspend_stake(env: Env, wallet: Address) -> Result<(), PoolError> {
+        admin::suspend_stake(&env, &wallet)
     }
 
     /// `claim_id` optional — pass the wallet's in-flight claim (if any) so
     /// its Rule A/B deadline clock resets on unsuspend (eng review
     /// blocker #1). `None` if the wallet has no claim needing a reset.
-    pub fn unsuspend_stake(env: Env, wallet: Address, claim_id: Option<BytesN<32>>) {
-        admin::unsuspend_stake(&env, &wallet, claim_id);
+    pub fn unsuspend_stake(
+        env: Env,
+        wallet: Address,
+        claim_id: Option<BytesN<32>>,
+    ) -> Result<(), PoolError> {
+        admin::unsuspend_stake(&env, &wallet, claim_id)
     }
 
     // -- stake / withdraw --
