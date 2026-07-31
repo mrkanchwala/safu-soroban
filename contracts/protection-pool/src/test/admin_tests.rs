@@ -208,13 +208,12 @@ fn suspend_stake_blocks_nothing_about_withdrawal() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: stake suspended")]
 fn suspend_stake_blocks_claim_submission() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     s.client.suspend_stake(&staker);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -222,6 +221,7 @@ fn suspend_stake_blocks_claim_submission() {
         &3,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::StakeSuspended)));
 }
 
 #[test]

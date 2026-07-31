@@ -131,7 +131,6 @@ fn override_bypasses_time_gate() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: override params mismatch with pending request")]
 fn mismatched_second_approval_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -139,43 +138,47 @@ fn mismatched_second_approval_panics() {
     let hash = tx_hash(&env, 1);
     s.client
         .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
-    s.client
-        .approve_override(&s.co_signer, &staker, &hash, &(ENTITLEMENT + 1), &TIER_C);
+    let result =
+        s.client
+            .try_approve_override(&s.co_signer, &staker, &hash, &(ENTITLEMENT + 1), &TIER_C);
+    assert_eq!(result, Err(Ok(PoolError::OverrideParamsMismatch)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: caller must be admin or coSigner")]
 fn approve_override_wrong_caller_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     let random = Address::generate(&env);
-    s.client
-        .approve_override(&random, &staker, &tx_hash(&env, 1), &ENTITLEMENT, &TIER_C);
+    let result = s
+        .client
+        .try_approve_override(&random, &staker, &tx_hash(&env, 1), &ENTITLEMENT, &TIER_C);
+    assert_eq!(result, Err(Ok(PoolError::CallerNotAdminOrCoSigner)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: entitlement must be positive")]
 fn approve_override_zero_entitlement_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client
-        .approve_override(&s.admin, &staker, &tx_hash(&env, 1), &0, &TIER_C);
+    let result = s
+        .client
+        .try_approve_override(&s.admin, &staker, &tx_hash(&env, 1), &0, &TIER_C);
+    assert_eq!(result, Err(Ok(PoolError::EntitlementNotPositive)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: invalid tier")]
 fn approve_override_invalid_tier_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client
-        .approve_override(&s.admin, &staker, &tx_hash(&env, 1), &ENTITLEMENT, &9);
+    let result = s
+        .client
+        .try_approve_override(&s.admin, &staker, &tx_hash(&env, 1), &ENTITLEMENT, &9);
+    assert_eq!(result, Err(Ok(PoolError::InvalidTier)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: entitlement exceeds tier cap")]
 fn approve_override_exceeds_tier_cap_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -184,12 +187,13 @@ fn approve_override_exceeds_tier_cap_panics() {
     let too_much = 600_000_000i128; // tier C cap for MID_STAKE is 500_000_000
     s.client
         .approve_override(&s.admin, &staker, &hash, &too_much, &TIER_C);
-    s.client
-        .approve_override(&s.co_signer, &staker, &hash, &too_much, &TIER_C);
+    let result = s
+        .client
+        .try_approve_override(&s.co_signer, &staker, &hash, &too_much, &TIER_C);
+    assert_eq!(result, Err(Ok(PoolError::EntitlementExceedsTierCap)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: insolvent")]
 fn approve_override_insolvent_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -200,8 +204,10 @@ fn approve_override_insolvent_panics() {
     let over_solvent = MID_STAKE + 1;
     s.client
         .approve_override(&s.admin, &staker, &hash, &over_solvent, &TIER_C);
-    s.client
-        .approve_override(&s.co_signer, &staker, &hash, &over_solvent, &TIER_C);
+    let result = s
+        .client
+        .try_approve_override(&s.co_signer, &staker, &hash, &over_solvent, &TIER_C);
+    assert_eq!(result, Err(Ok(PoolError::Insolvent)));
 }
 
 #[test]
@@ -234,7 +240,6 @@ fn override_reexecution_same_params_resets_cooldown() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim already completed")]
 fn override_on_completed_claim_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -252,8 +257,10 @@ fn override_on_completed_claim_panics() {
     s.client.claim_stream(&claim_id, &ben);
 
     s.client.approve_override(&s.admin, &staker, &hash, &small, &TIER_C);
-    s.client
-        .approve_override(&s.co_signer, &staker, &hash, &small, &TIER_C);
+    let result = s
+        .client
+        .try_approve_override(&s.co_signer, &staker, &hash, &small, &TIER_C);
+    assert_eq!(result, Err(Ok(PoolError::ClaimAlreadyCompleted)));
 }
 
 #[test]
@@ -302,7 +309,6 @@ fn cancel_pending_override_allows_corrected_resubmission() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: caller must be admin")]
 fn cancel_pending_override_wrong_caller_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -311,11 +317,11 @@ fn cancel_pending_override_wrong_caller_panics() {
     s.client
         .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
     let random = Address::generate(&env);
-    s.client.cancel_pending_override(&random, &staker, &hash);
+    let result = s.client.try_cancel_pending_override(&random, &staker, &hash);
+    assert_eq!(result, Err(Ok(PoolError::CallerNotAdmin)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: caller must be admin")]
 fn cancel_pending_override_cosigner_cannot_cancel() {
     // V8's cancelPendingOverride is onlyOwner — admin only. An earlier
     // draft here wrongly allowed coSigner too, before reading V8 directly.
@@ -325,26 +331,29 @@ fn cancel_pending_override_cosigner_cannot_cancel() {
     let hash = tx_hash(&env, 1);
     s.client
         .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
-    s.client.cancel_pending_override(&s.co_signer, &staker, &hash);
+    let result = s
+        .client
+        .try_cancel_pending_override(&s.co_signer, &staker, &hash);
+    assert_eq!(result, Err(Ok(PoolError::CallerNotAdmin)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no pending override")]
 fn cancel_pending_override_nonexistent_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client
-        .cancel_pending_override(&s.admin, &staker, &tx_hash(&env, 99));
+    let result =
+        s.client
+            .try_cancel_pending_override(&s.admin, &staker, &tx_hash(&env, 99));
+    assert_eq!(result, Err(Ok(PoolError::NoPendingOverride)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no pending override")]
 fn cancel_pending_override_after_execution_panics() {
     // Matches V8 exactly: execution DELETES the stored request (see
     // approve_override), so a post-execution cancel attempt naturally
-    // fails with "no pending override" — the same error a never-existed
-    // request would give, not a distinct "already executed" message.
+    // fails with NoPendingOverride — the same error a never-existed
+    // request would give, not a distinct "already executed" variant.
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
@@ -353,7 +362,8 @@ fn cancel_pending_override_after_execution_panics() {
         .approve_override(&s.admin, &staker, &hash, &ENTITLEMENT, &TIER_C);
     s.client
         .approve_override(&s.co_signer, &staker, &hash, &ENTITLEMENT, &TIER_C);
-    s.client.cancel_pending_override(&s.admin, &staker, &hash);
+    let result = s.client.try_cancel_pending_override(&s.admin, &staker, &hash);
+    assert_eq!(result, Err(Ok(PoolError::NoPendingOverride)));
 }
 
 /// Mutation-testing gap fix (2026-07-22 re-run). Kills claim.rs:827

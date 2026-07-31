@@ -4,6 +4,7 @@ use soroban_sdk::testutils::{Address as _, Events as _};
 use soroban_sdk::{Address, IntoVal};
 
 use super::common::*;
+use crate::error::PoolError;
 use crate::types::ClaimStatus;
 
 const ENTITLEMENT: i128 = 1_000_000;
@@ -114,7 +115,6 @@ fn approve_claim_burns_entire_lifetime_points_balance() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim not awaiting approval")]
 fn approve_claim_before_gate_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -128,11 +128,11 @@ fn approve_claim_before_gate_panics() {
         &now_ts(&env),
     );
     // Still PendingTime — gate not met, never transitioned to AwaitingApproval.
-    s.client.approve_claim(&claim_id);
+    let result = s.client.try_approve_claim(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::ClaimNotAwaitingApproval)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: approval window expired")]
 fn approve_claim_after_100_days_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -147,11 +147,11 @@ fn approve_claim_after_100_days_panics() {
         &now_ts(&env),
     );
     advance_days(&env, 101);
-    s.client.approve_claim(&claim_id);
+    let result = s.client.try_approve_claim(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::ApprovalWindowExpired)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: stake suspended")]
 fn approve_claim_while_suspended_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -166,7 +166,8 @@ fn approve_claim_while_suspended_panics() {
         &now_ts(&env),
     );
     s.client.suspend_stake(&staker);
-    s.client.approve_claim(&claim_id);
+    let result = s.client.try_approve_claim(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::StakeSuspended)));
 }
 
 // -----------------------------------------------------------------------
@@ -204,7 +205,6 @@ fn expire_pending_approval_releases_reservation() {
 /// proves the positive path actually works end-to-end: suspend mid-
 /// streaming genuinely blocks the next collection.
 #[test]
-#[should_panic(expected = "SAFU: stake suspended")]
 fn suspend_during_active_streaming_blocks_claim_stream() {
     let env = new_env();
     let s = setup(&env);
@@ -215,7 +215,8 @@ fn suspend_during_active_streaming_blocks_claim_stream() {
     s.client.claim_stream(&claim_id, &ben); // proves streaming works first
     s.client.suspend_stake(&staker); // now reachable post-forfeiture
     advance_days(&env, 10);
-    s.client.claim_stream(&claim_id, &ben); // blocked while suspended
+    let result = s.client.try_claim_stream(&claim_id, &ben); // blocked while suspended
+    assert_eq!(result, Err(Ok(PoolError::StakeSuspended)));
 }
 
 /// Audit finding 2026-07-22 (adversarial re-review, /audit-chain): a
@@ -224,7 +225,6 @@ fn suspend_during_active_streaming_blocks_claim_stream() {
 /// deadline (never explicitly unsuspended) loses them the reservation
 /// regardless, defeating blocker #1's fairness fix.
 #[test]
-#[should_panic(expected = "SAFU: stake suspended")]
 fn expire_pending_approval_blocked_while_suspended() {
     let env = new_env();
     let s = setup(&env);
@@ -240,11 +240,11 @@ fn expire_pending_approval_blocked_while_suspended() {
     );
     s.client.suspend_stake(&staker);
     advance_days(&env, 101); // deadline genuinely passed
-    s.client.expire_pending_approval(&claim_id);
+    let result = s.client.try_expire_pending_approval(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::StakeSuspended)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: approval window not yet expired")]
 fn expire_pending_approval_before_deadline_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -259,7 +259,8 @@ fn expire_pending_approval_before_deadline_panics() {
         &now_ts(&env),
     );
     advance_days(&env, 99);
-    s.client.expire_pending_approval(&claim_id);
+    let result = s.client.try_expire_pending_approval(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::ApprovalWindowNotExpired)));
 }
 
 // -----------------------------------------------------------------------
@@ -300,7 +301,6 @@ fn expire_stale_claim_zero_streamed_case() {
 /// Audit finding 2026-07-22 — same fairness gap as
 /// expire_pending_approval_blocked_while_suspended, but for Rule B.
 #[test]
-#[should_panic(expected = "SAFU: stake suspended")]
 fn expire_stale_claim_blocked_while_suspended() {
     let env = new_env();
     let s = setup(&env);
@@ -311,11 +311,11 @@ fn expire_stale_claim_blocked_while_suspended() {
     s.client.claim_stream(&claim_id, &ben);
     s.client.suspend_stake(&staker);
     advance_days(&env, 101); // genuinely stale now
-    s.client.expire_stale_claim(&claim_id);
+    let result = s.client.try_expire_stale_claim(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::StakeSuspended)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim not yet stale")]
 fn expire_stale_claim_before_100_days_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -325,7 +325,8 @@ fn expire_stale_claim_before_100_days_panics() {
     advance_days(&env, 10);
     s.client.claim_stream(&claim_id, &ben);
     advance_days(&env, 99); // resets from the collection above, not yet stale
-    s.client.expire_stale_claim(&claim_id);
+    let result = s.client.try_expire_stale_claim(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::ClaimNotStale)));
 }
 
 #[test]
@@ -397,13 +398,12 @@ fn submit_claim_reserves_total_allocated() {
 // -----------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "SAFU: caller must be oracle or admin")]
 fn submit_claim_wrong_caller_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     let random = Address::generate(&env);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &random,
         &staker,
         &tx_hash(&env, 1),
@@ -411,15 +411,15 @@ fn submit_claim_wrong_caller_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::CallerNotOracleOrAdmin)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: entitlement must be positive")]
 fn submit_claim_zero_entitlement_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -427,15 +427,15 @@ fn submit_claim_zero_entitlement_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::EntitlementNotPositive)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: invalid tier")]
 fn submit_claim_invalid_tier_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -443,15 +443,15 @@ fn submit_claim_invalid_tier_panics() {
         &4,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::InvalidTier)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no stake")]
 fn submit_claim_no_stake_panics() {
     let env = new_env();
     let s = setup(&env);
     let random = Address::generate(&env);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &random,
         &tx_hash(&env, 1),
@@ -459,18 +459,18 @@ fn submit_claim_no_stake_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::NoStake)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no active stake")]
 fn submit_claim_after_withdraw_panics() {
-    // Reaches "no active stake" (amount<=0), not "stake already
-    // withdrawn" — same check-ordering note as elsewhere in this suite.
+    // Reaches PoolError::NoActiveStake (amount<=0), not AlreadyWithdrawn
+    // — same check-ordering note as elsewhere in this suite.
     let env = new_env();
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
     s.client.withdraw(&staker, &ben);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -478,10 +478,10 @@ fn submit_claim_after_withdraw_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::NoActiveStake)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim already active for this stake")]
 fn submit_claim_twice_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -494,7 +494,7 @@ fn submit_claim_twice_panics() {
         &TIER_C,
         &now_ts(&env),
     );
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 2),
@@ -502,16 +502,16 @@ fn submit_claim_twice_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::ClaimAlreadyActiveForStake)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: entitlement exceeds tier cap")]
 fn submit_claim_exceeds_tier_cap_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     // Tier C cap = stake * 5 = 500_000_000; ask for more.
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -519,15 +519,15 @@ fn submit_claim_exceeds_tier_cap_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::EntitlementExceedsTierCap)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: hack timestamp in the future")]
 fn submit_claim_future_hack_timestamp_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -535,15 +535,15 @@ fn submit_claim_future_hack_timestamp_panics() {
         &TIER_C,
         &(now_ts(&env) + 1),
     );
+    assert_eq!(result, Err(Ok(PoolError::HackTimestampInFuture)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: hack predates stake")]
 fn submit_claim_hack_before_stake_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -551,17 +551,17 @@ fn submit_claim_hack_before_stake_panics() {
         &TIER_C,
         &(now_ts(&env) - 1),
     );
+    assert_eq!(result, Err(Ok(PoolError::HackPredatesStake)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim window expired")]
 fn submit_claim_outside_claim_window_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     let hack_ts = now_ts(&env);
     advance_days(&env, 31); // > 30-day claim window
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -569,6 +569,7 @@ fn submit_claim_outside_claim_window_panics() {
         &TIER_C,
         &hack_ts,
     );
+    assert_eq!(result, Err(Ok(PoolError::ClaimWindowExpired)));
 }
 
 #[test]
@@ -589,14 +590,13 @@ fn submit_claim_at_exactly_claim_window_boundary_succeeds() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: insolvent")]
 fn submit_claim_insolvent_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     // Only MID_STAKE (100_000_000) actually backing the pool; ask for
     // more than that even though it's under the tier C cap (500_000_000).
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -604,17 +604,17 @@ fn submit_claim_insolvent_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::Insolvent)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: daily stress cap exceeded")]
 fn submit_claim_exceeds_stress_cap_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     // stress_cap at 0% utilization = 25% of total_staked = 25_000_000.
     // Ask for more than that but still within solvency/tier bounds.
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -622,10 +622,10 @@ fn submit_claim_exceeds_stress_cap_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::DailyStressCapExceeded)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: oracle daily claim-count limit reached")]
 fn submit_claim_oracle_rate_limit_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -642,7 +642,7 @@ fn submit_claim_oracle_rate_limit_panics() {
         &TIER_C,
         &now_ts(&env),
     );
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker2,
         &tx_hash(&env, 2),
@@ -650,6 +650,7 @@ fn submit_claim_oracle_rate_limit_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::OracleDailyClaimLimitReached)));
 }
 
 #[test]
@@ -704,11 +705,10 @@ fn submit_claim_oracle_limit_resets_next_day() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim already exists")]
 fn submit_claim_duplicate_wallet_tx_hash_after_cancel_panics() {
-    // claim_active alone would block a same-wallet resubmit with "claim
-    // already active for this stake" — that flag resets on cancel_claim,
-    // so this test specifically isolates the SEPARATE claim-id-existence
+    // claim_active alone would block a same-wallet resubmit with
+    // ClaimAlreadyActiveForStake — that flag resets on cancel_claim, so
+    // this test specifically isolates the SEPARATE claim-id-existence
     // guard: a cancelled claim's id is permanently retired, never reused.
     let env = new_env();
     let s = setup(&env);
@@ -722,8 +722,10 @@ fn submit_claim_duplicate_wallet_tx_hash_after_cancel_panics() {
     // what this test targets) doesn't fire first and mask the real
     // assertion.
     advance_days(&env, 1);
-    s.client
-        .submit_claim(&s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    let result = s
+        .client
+        .try_submit_claim(&s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    assert_eq!(result, Err(Ok(PoolError::ClaimAlreadyExists)));
 }
 
 #[test]
@@ -778,7 +780,6 @@ fn unlock_pending_claim_moves_to_awaiting_approval_after_gate() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: time gate not yet met")]
 fn unlock_pending_claim_before_gate_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -792,11 +793,11 @@ fn unlock_pending_claim_before_gate_panics() {
         &now_ts(&env),
     );
     advance_days(&env, 89);
-    s.client.unlock_pending_claim(&claim_id);
+    let result = s.client.try_unlock_pending_claim(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::TimeGateNotMet)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim not pending")]
 fn unlock_pending_claim_already_active_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -810,15 +811,16 @@ fn unlock_pending_claim_already_active_panics() {
         &TIER_C,
         &now_ts(&env),
     );
-    s.client.unlock_pending_claim(&claim_id);
+    let result = s.client.try_unlock_pending_claim(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::ClaimNotPending)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no such claim")]
 fn unlock_pending_claim_nonexistent_panics() {
     let env = new_env();
     let s = setup(&env);
-    s.client.unlock_pending_claim(&tx_hash(&env, 99));
+    let result = s.client.try_unlock_pending_claim(&tx_hash(&env, 99));
+    assert_eq!(result, Err(Ok(PoolError::NoSuchClaim)));
 }
 
 // -----------------------------------------------------------------------
@@ -926,12 +928,12 @@ fn approve_claim_burns_prior_banked_plus_new_points_exactly() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: cooldown not passed")]
 fn claim_stream_before_cooldown_panics() {
     let env = new_env();
     let s = setup(&env);
     let (_staker, ben, claim_id) = active_claim_with_entitlement(&env, &s, ENTITLEMENT);
-    s.client.claim_stream(&claim_id, &ben);
+    let result = s.client.try_claim_stream(&claim_id, &ben);
+    assert_eq!(result, Err(Ok(PoolError::CooldownNotPassed)));
 }
 
 #[test]
@@ -961,7 +963,6 @@ fn claim_stream_full_after_vesting_completes() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim not active")]
 fn claim_stream_after_completion_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -970,11 +971,11 @@ fn claim_stream_after_completion_panics() {
     advance_days(&env, 7);
     advance_days(&env, 45);
     s.client.claim_stream(&claim_id, &ben);
-    s.client.claim_stream(&claim_id, &ben);
+    let result = s.client.try_claim_stream(&claim_id, &ben);
+    assert_eq!(result, Err(Ok(PoolError::ClaimNotActive)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: wrong beneficiary")]
 fn claim_stream_wrong_beneficiary_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -982,16 +983,17 @@ fn claim_stream_wrong_beneficiary_panics() {
     advance_days(&env, 7);
     advance_days(&env, 45);
     let wrong = Address::generate(&env);
-    s.client.claim_stream(&claim_id, &wrong);
+    let result = s.client.try_claim_stream(&claim_id, &wrong);
+    assert_eq!(result, Err(Ok(PoolError::WrongBeneficiary)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no such claim")]
 fn claim_stream_nonexistent_claim_panics() {
     let env = new_env();
     let s = setup(&env);
     let ben = Address::generate(&env);
-    s.client.claim_stream(&tx_hash(&env, 99), &ben);
+    let result = s.client.try_claim_stream(&tx_hash(&env, 99), &ben);
+    assert_eq!(result, Err(Ok(PoolError::NoSuchClaim)));
 }
 
 #[test]
@@ -1019,7 +1021,6 @@ fn claim_stream_daily_outflow_cap_limits_large_payout() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: daily outflow cap reached, try again tomorrow")]
 fn claim_stream_second_call_same_day_hits_cap() {
     // CHANGED 2026-07-22 (bug 1 fix): entitlement bumped 300M -> 320M.
     // Bug 1 used to leave total_allocated frozen at the full entitlement
@@ -1044,7 +1045,8 @@ fn claim_stream_second_call_same_day_hits_cap() {
 
     let first = s.client.claim_stream(&claim_id, &ben); // drains the day's cap
     assert_eq!(first, 40_500_000);
-    s.client.claim_stream(&claim_id, &ben); // same day, same rate — nothing left
+    let result = s.client.try_claim_stream(&claim_id, &ben); // same day, same rate — nothing left
+    assert_eq!(result, Err(Ok(PoolError::DailyOutflowCapReached)));
 }
 
 #[test]
@@ -1124,7 +1126,6 @@ fn cancel_pending_claim_no_penalty() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim not cancellable")]
 fn cancel_completed_claim_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -1133,15 +1134,16 @@ fn cancel_completed_claim_panics() {
     advance_days(&env, 7);
     advance_days(&env, 45);
     s.client.claim_stream(&claim_id, &ben);
-    s.client.cancel_claim(&claim_id);
+    let result = s.client.try_cancel_claim(&claim_id);
+    assert_eq!(result, Err(Ok(PoolError::ClaimNotCancellable)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no such claim")]
 fn cancel_nonexistent_claim_panics() {
     let env = new_env();
     let s = setup(&env);
-    s.client.cancel_claim(&tx_hash(&env, 99));
+    let result = s.client.try_cancel_claim(&tx_hash(&env, 99));
+    assert_eq!(result, Err(Ok(PoolError::NoSuchClaim)));
 }
 
 #[test]

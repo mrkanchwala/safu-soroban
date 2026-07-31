@@ -4,6 +4,7 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::Address;
 
 use super::common::*;
+use crate::error::PoolError;
 
 const TIER_A: u32 = 1;
 const TIER_B: u32 = 2;
@@ -74,12 +75,11 @@ fn tier_caps_apply_correct_ratios() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: entitlement exceeds tier cap")]
 fn tier_a_one_stroop_over_cap_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _b) = staked_wallet(&env, &s);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -87,6 +87,7 @@ fn tier_a_one_stroop_over_cap_panics() {
         &TIER_A,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::EntitlementExceedsTierCap)));
 }
 
 #[test]
