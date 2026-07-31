@@ -17,6 +17,7 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::Address;
 
 use super::common::*;
+use crate::error::PoolError;
 
 const ENTITLEMENT: i128 = 1_000_000;
 const TIER_B: u32 = 2;
@@ -130,7 +131,6 @@ fn is_paused_tracks_pause_state_both_ways() {
 /// the same real day; a mutated day value would wrongly reset the
 /// daily counter).
 #[test]
-#[should_panic(expected = "SAFU: daily stress cap exceeded")]
 fn stress_cap_tightens_at_exactly_20_percent_utilization() {
     let env = new_env();
     let s = setup(&env);
@@ -145,9 +145,11 @@ fn stress_cap_tightens_at_exactly_20_percent_utilization() {
     // utilization now exactly 2000 bps → rate drops to 1000 → cap 50M.
     // Same real day (500s later), different ledger.
     advance_ledgers(&env, 100);
-    // 100M (today's total) + 1M > 50M → must panic.
-    s.client
-        .submit_claim(&s.admin, &w2, &tx_hash(&env, 2), &1_000_000, &TIER_C, &now_ts(&env));
+    // 100M (today's total) + 1M > 50M → must error.
+    let result = s
+        .client
+        .try_submit_claim(&s.admin, &w2, &tx_hash(&env, 2), &1_000_000, &TIER_C, &now_ts(&env));
+    assert_eq!(result, Err(Ok(PoolError::DailyStressCapExceeded)));
 }
 
 /// Days 1–4: fill the daily stress cap EXACTLY each day, walking
@@ -186,7 +188,6 @@ fn stress_cap_exact_daily_fills_walk_utilization_to_50_percent() {
 /// be 300 (the `< 5_000` branch must NOT admit 5000 itself) → cap 15M.
 /// Kills claim.rs:122:31 (<→<= at the 5000 boundary).
 #[test]
-#[should_panic(expected = "SAFU: daily stress cap exceeded")]
 fn stress_cap_rate_drops_at_exactly_50_percent_utilization() {
     let env = new_env();
     let s = setup(&env);
@@ -206,10 +207,12 @@ fn stress_cap_rate_drops_at_exactly_50_percent_utilization() {
     advance_days(&env, 1);
     s.client
         .submit_claim(&s.admin, &w4, &tx_hash(&env, 4), &50_000_000, &TIER_C, &now_ts(&env));
-    // Utilization exactly 5000 bps → rate 300 → cap 15M. 16M must panic.
+    // Utilization exactly 5000 bps → rate 300 → cap 15M. 16M must error.
     advance_days(&env, 1);
-    s.client
-        .submit_claim(&s.admin, &w5, &tx_hash(&env, 5), &16_000_000, &TIER_C, &now_ts(&env));
+    let result = s
+        .client
+        .try_submit_claim(&s.admin, &w5, &tx_hash(&env, 5), &16_000_000, &TIER_C, &now_ts(&env));
+    assert_eq!(result, Err(Ok(PoolError::DailyStressCapExceeded)));
 }
 
 /// Entitlement that EXACTLY fills both the solvency gap and the daily
@@ -241,7 +244,6 @@ fn submit_claim_exact_solvency_and_stress_fill_succeeds() {
 /// DIFFERENT panic than "cooldown not passed".
 /// Kills claim.rs:384:19 (<→<=).
 #[test]
-#[should_panic(expected = "SAFU: nothing vested yet")]
 fn claim_stream_at_exact_cooldown_end_passes_cooldown_check() {
     let env = new_env();
     let s = setup(&env);
@@ -249,7 +251,10 @@ fn claim_stream_at_exact_cooldown_end_passes_cooldown_check() {
     let hash = tx_hash(&env, 1);
     do_override(&env, &s, &staker, &hash, ENTITLEMENT, TIER_C);
     advance_days(&env, 7); // now == cooldown_ends_ledger exactly
-    s.client.claim_stream(&claim_id_for(&env, &staker, &hash), &ben);
+    let result = s
+        .client
+        .try_claim_stream(&claim_id_for(&env, &staker, &hash), &ben);
+    assert_eq!(result, Err(Ok(PoolError::NothingVested)));
 }
 
 /// Second stream pays EXACTLY the newly-vested delta, not vested+streamed.
@@ -474,7 +479,6 @@ fn override_exact_tier_cap_and_solvency_fill_succeeds() {
 /// already has one in flight under a different tx_hash — the old code had
 /// no equivalent to submit_claim's claim_active guard.
 #[test]
-#[should_panic(expected = "SAFU: wallet already has a different active claim")]
 fn override_blocks_second_claim_on_wallet_with_existing_claim() {
     let env = new_env();
     let s = setup(&env);
@@ -485,7 +489,13 @@ fn override_blocks_second_claim_on_wallet_with_existing_claim() {
     // A DIFFERENT tx_hash for the SAME wallet via override must be
     // refused — without the fix, this would create a second, independently
     // payable claim against the same forfeited stake.
-    do_override(&env, &s, &staker, &tx_hash(&env, 2), ENTITLEMENT, TIER_C);
+    let hash2 = tx_hash(&env, 2);
+    s.client
+        .approve_override(&s.admin, &staker, &hash2, &ENTITLEMENT, &TIER_C);
+    let result = s
+        .client
+        .try_approve_override(&s.co_signer, &staker, &hash2, &ENTITLEMENT, &TIER_C);
+    assert_eq!(result, Err(Ok(PoolError::WalletHasDifferentActiveClaim)));
 }
 
 /// Bug 4 regression (eng review 2026-07-22): the daily-outflow-cap
@@ -499,7 +509,6 @@ fn override_blocks_second_claim_on_wallet_with_existing_claim() {
 /// recomputed cap below what A already collected today. A's next call
 /// must fail with the graceful message, not a raw arithmetic panic.
 #[test]
-#[should_panic(expected = "SAFU: daily outflow cap reached, try again tomorrow")]
 fn claim_stream_cap_shrinking_mid_day_fails_gracefully_not_via_panic() {
     let env = new_env();
     let s = setup(&env);
@@ -540,8 +549,9 @@ fn claim_stream_cap_shrinking_mid_day_fails_gracefully_not_via_panic() {
     // larger cap_base) is now BELOW the 67.5M already paid today. Old
     // code: `(cap - daily_outflow_so_far)` panics with a raw overflow
     // trap. Fixed code: saturating_sub clamps to 0, and the transfer
-    // amount check produces the intended, graceful message instead.
-    s.client.claim_stream(&claim_a, &ben_a);
+    // amount check produces the intended, graceful error instead.
+    let result = s.client.try_claim_stream(&claim_a, &ben_a);
+    assert_eq!(result, Err(Ok(PoolError::DailyOutflowCapReached)));
 }
 
 // -----------------------------------------------------------------------
@@ -592,7 +602,6 @@ fn stake_filling_pool_cap_exactly_succeeds() {
 /// must panic.
 /// Kills stake.rs:134:30 (>→==).
 #[test]
-#[should_panic(expected = "SAFU: pool cap exceeded")]
 fn stake_overshooting_pool_cap_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -601,7 +610,8 @@ fn stake_overshooting_pool_cap_panics() {
     // 100M + 1M = 101M > 100.5M (and ≠ 100.5M — kills the == mutant).
     let w2 = new_funded_address(&env, &s, 1_000_000);
     let b2 = Address::generate(&env);
-    s.client.stake(&w2, &1_000_000, &b2);
+    let result = s.client.try_stake(&w2, &1_000_000, &b2);
+    assert_eq!(result, Err(Ok(PoolError::PoolCapExceeded)));
 }
 
 /// Staker count increments by exactly 1 per stake.
@@ -621,7 +631,6 @@ fn total_stakers_increments_exactly() {
 /// instead would mean the || in the guard degraded to &&.
 /// Kills stake.rs:276:27 (||→&&).
 #[test]
-#[should_panic(expected = "SAFU: no active stake")]
 fn emergency_exit_after_forfeiture_fails_on_active_stake_guard() {
     let env = new_env();
     let s = setup(&env);
@@ -632,8 +641,9 @@ fn emergency_exit_after_forfeiture_fails_on_active_stake_guard() {
     advance_days(&env, 7);
     advance_days(&env, 45);
     s.client.claim_stream(&claim_id, &ben); // Completed
-    // Record: amount 100M > 0, withdrawn=true → "no active stake".
-    s.client.emergency_exit(&staker);
+    // Record: amount 100M > 0, withdrawn=true → PoolError::NoActiveStake.
+    let result = s.client.try_emergency_exit(&staker);
+    assert_eq!(result, Err(Ok(PoolError::NoActiveStake)));
 }
 
 /// emergency_exit decrements total_staked by exactly the exiting amount.
@@ -658,7 +668,6 @@ fn emergency_exit_decrements_total_staked_exactly() {
 /// have expired).
 /// Kills types.rs:40:43 (*→+ in PENALTY_LOCK_LEDGERS).
 #[test]
-#[should_panic(expected = "SAFU: penalty lock active")]
 fn penalty_lock_still_active_after_two_days() {
     let env = new_env();
     let s = setup(&env);
@@ -678,7 +687,8 @@ fn penalty_lock_still_active_after_two_days() {
     s.client.approve_claim(&claim_id);
     s.client.cancel_claim(&claim_id); // restores stake + penalty lock
     advance_days(&env, 2);
-    s.client.withdraw(&staker, &ben);
+    let result = s.client.try_withdraw(&staker, &ben);
+    assert_eq!(result, Err(Ok(PoolError::PenaltyLockActive)));
 }
 
 // -----------------------------------------------------------------------

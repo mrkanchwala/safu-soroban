@@ -16,11 +16,14 @@ extern crate std;
 
 mod admin;
 mod claim;
+mod error;
 mod stake;
 mod storage;
 #[cfg(test)]
 mod test;
 mod types;
+
+pub use error::PoolError;
 
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
 
@@ -40,24 +43,24 @@ impl ProtectionPool {
         co_signer: Address,
         xlm_token: Address,
         pool_cap: i128,
-    ) {
-        admin::initialize(&env, &admin, &oracle, &co_signer, &xlm_token, pool_cap);
+    ) -> Result<(), PoolError> {
+        admin::initialize(&env, &admin, &oracle, &co_signer, &xlm_token, pool_cap)
     }
 
-    pub fn set_oracle(env: Env, new_oracle: Address) {
-        admin::set_oracle(&env, &new_oracle);
+    pub fn set_oracle(env: Env, new_oracle: Address) -> Result<(), PoolError> {
+        admin::set_oracle(&env, &new_oracle)
     }
 
-    pub fn set_co_signer(env: Env, new_co_signer: Address) {
-        admin::set_co_signer(&env, &new_co_signer);
+    pub fn set_co_signer(env: Env, new_co_signer: Address) -> Result<(), PoolError> {
+        admin::set_co_signer(&env, &new_co_signer)
     }
 
-    pub fn set_pool_cap(env: Env, new_cap: i128) {
-        admin::set_pool_cap(&env, new_cap);
+    pub fn set_pool_cap(env: Env, new_cap: i128) -> Result<(), PoolError> {
+        admin::set_pool_cap(&env, new_cap)
     }
 
-    pub fn transfer_admin(env: Env, new_admin: Address) {
-        admin::transfer_admin(&env, &new_admin);
+    pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), PoolError> {
+        admin::transfer_admin(&env, &new_admin)
     }
 
     pub fn pause(env: Env) {
@@ -68,33 +71,46 @@ impl ProtectionPool {
         admin::unpause(&env);
     }
 
-    pub fn suspend_stake(env: Env, wallet: Address) {
-        admin::suspend_stake(&env, &wallet);
+    pub fn suspend_stake(env: Env, wallet: Address) -> Result<(), PoolError> {
+        admin::suspend_stake(&env, &wallet)
     }
 
     /// `claim_id` optional — pass the wallet's in-flight claim (if any) so
     /// its Rule A/B deadline clock resets on unsuspend (eng review
     /// blocker #1). `None` if the wallet has no claim needing a reset.
-    pub fn unsuspend_stake(env: Env, wallet: Address, claim_id: Option<BytesN<32>>) {
-        admin::unsuspend_stake(&env, &wallet, claim_id);
+    pub fn unsuspend_stake(
+        env: Env,
+        wallet: Address,
+        claim_id: Option<BytesN<32>>,
+    ) -> Result<(), PoolError> {
+        admin::unsuspend_stake(&env, &wallet, claim_id)
     }
 
     // -- stake / withdraw --
 
-    pub fn stake(env: Env, staker: Address, amount: i128, beneficiary: Address) {
-        stake::stake(&env, &staker, amount, &beneficiary);
+    pub fn stake(
+        env: Env,
+        staker: Address,
+        amount: i128,
+        beneficiary: Address,
+    ) -> Result<(), PoolError> {
+        stake::stake(&env, &staker, amount, &beneficiary)
     }
 
-    pub fn withdraw(env: Env, staker: Address, beneficiary: Address) {
-        stake::withdraw(&env, &staker, &beneficiary);
+    pub fn withdraw(env: Env, staker: Address, beneficiary: Address) -> Result<(), PoolError> {
+        stake::withdraw(&env, &staker, &beneficiary)
     }
 
-    pub fn set_beneficiary(env: Env, staker: Address, new_beneficiary: Address) {
-        stake::set_beneficiary(&env, &staker, &new_beneficiary);
+    pub fn set_beneficiary(
+        env: Env,
+        staker: Address,
+        new_beneficiary: Address,
+    ) -> Result<(), PoolError> {
+        stake::set_beneficiary(&env, &staker, &new_beneficiary)
     }
 
-    pub fn emergency_exit(env: Env, staker: Address) {
-        stake::emergency_exit(&env, &staker);
+    pub fn emergency_exit(env: Env, staker: Address) -> Result<(), PoolError> {
+        stake::emergency_exit(&env, &staker)
     }
 
     // -- claims --
@@ -108,42 +124,46 @@ impl ProtectionPool {
         entitlement: i128,
         tier: u32,
         hack_timestamp: u64,
-    ) -> BytesN<32> {
+    ) -> Result<BytesN<32>, PoolError> {
         claim::submit_claim(&env, &caller, &wallet, &tx_hash, entitlement, tier, hack_timestamp)
     }
 
-    pub fn unlock_pending_claim(env: Env, claim_id: BytesN<32>) {
-        claim::unlock_pending_claim(&env, &claim_id);
+    pub fn unlock_pending_claim(env: Env, claim_id: BytesN<32>) -> Result<(), PoolError> {
+        claim::unlock_pending_claim(&env, &claim_id)
     }
 
     /// NEW 2026-07-22 (Rule A) — staker-authorized. Burns the wallet's
     /// entire lifetime points balance, forfeits the stake, starts
     /// cooldown/vesting. Must be called within `APPROVE_WINDOW_LEDGERS` of
     /// the claim entering `AwaitingApproval`.
-    pub fn approve_claim(env: Env, claim_id: BytesN<32>) {
-        claim::approve_claim(&env, &claim_id);
+    pub fn approve_claim(env: Env, claim_id: BytesN<32>) -> Result<(), PoolError> {
+        claim::approve_claim(&env, &claim_id)
     }
 
     /// NEW 2026-07-22 (Rule A sweep) — permissionless, mirrors
     /// `unlock_pending_claim`. Releases the reservation back to the pool
     /// if the staker never approved within the window.
-    pub fn expire_pending_approval(env: Env, claim_id: BytesN<32>) {
-        claim::expire_pending_approval(&env, &claim_id);
+    pub fn expire_pending_approval(env: Env, claim_id: BytesN<32>) -> Result<(), PoolError> {
+        claim::expire_pending_approval(&env, &claim_id)
     }
 
     /// NEW 2026-07-22 (Rule B sweep) — permissionless. Releases whatever's
     /// left uncollected if the staker goes `COLLECTION_INACTIVITY_LEDGERS`
     /// with zero `claim_stream` activity.
-    pub fn expire_stale_claim(env: Env, claim_id: BytesN<32>) {
-        claim::expire_stale_claim(&env, &claim_id);
+    pub fn expire_stale_claim(env: Env, claim_id: BytesN<32>) -> Result<(), PoolError> {
+        claim::expire_stale_claim(&env, &claim_id)
     }
 
-    pub fn claim_stream(env: Env, claim_id: BytesN<32>, beneficiary: Address) -> i128 {
+    pub fn claim_stream(
+        env: Env,
+        claim_id: BytesN<32>,
+        beneficiary: Address,
+    ) -> Result<i128, PoolError> {
         claim::claim_stream(&env, &claim_id, &beneficiary)
     }
 
-    pub fn cancel_claim(env: Env, claim_id: BytesN<32>) {
-        claim::cancel_claim(&env, &claim_id);
+    pub fn cancel_claim(env: Env, claim_id: BytesN<32>) -> Result<(), PoolError> {
+        claim::cancel_claim(&env, &claim_id)
     }
 
     pub fn approve_override(
@@ -153,12 +173,17 @@ impl ProtectionPool {
         tx_hash: BytesN<32>,
         entitlement: i128,
         tier: u32,
-    ) {
-        claim::approve_override(&env, &caller, &wallet, &tx_hash, entitlement, tier);
+    ) -> Result<(), PoolError> {
+        claim::approve_override(&env, &caller, &wallet, &tx_hash, entitlement, tier)
     }
 
-    pub fn cancel_pending_override(env: Env, caller: Address, wallet: Address, tx_hash: BytesN<32>) {
-        claim::cancel_pending_override(&env, &caller, &wallet, &tx_hash);
+    pub fn cancel_pending_override(
+        env: Env,
+        caller: Address,
+        wallet: Address,
+        tx_hash: BytesN<32>,
+    ) -> Result<(), PoolError> {
+        claim::cancel_pending_override(&env, &caller, &wallet, &tx_hash)
     }
 
     // -- views --

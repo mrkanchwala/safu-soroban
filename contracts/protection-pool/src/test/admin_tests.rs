@@ -4,6 +4,7 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::Address;
 
 use super::common::*;
+use crate::error::PoolError;
 
 #[test]
 fn initialize_sets_all_fields() {
@@ -17,16 +18,16 @@ fn initialize_sets_all_fields() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: already initialized")]
 fn initialize_twice_panics() {
     let env = new_env();
     let s = setup(&env);
-    s.client
-        .initialize(&s.admin, &s.oracle, &s.co_signer, &s.token_id, &POOL_CAP);
+    let result = s
+        .client
+        .try_initialize(&s.admin, &s.oracle, &s.co_signer, &s.token_id, &POOL_CAP);
+    assert_eq!(result, Err(Ok(PoolError::AlreadyInitialized)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: oracle cannot equal coSigner")]
 fn initialize_oracle_equals_cosigner_panics() {
     let env = new_env();
     let admin = Address::generate(&env);
@@ -35,11 +36,11 @@ fn initialize_oracle_equals_cosigner_panics() {
     let token_id = sac.address();
     let contract_id = env.register(crate::ProtectionPool, ());
     let client = crate::ProtectionPoolClient::new(&env, &contract_id);
-    client.initialize(&admin, &same, &same, &token_id, &POOL_CAP);
+    let result = client.try_initialize(&admin, &same, &same, &token_id, &POOL_CAP);
+    assert_eq!(result, Err(Ok(PoolError::OracleEqualsCoSigner)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: coSigner must differ from admin")]
 fn initialize_cosigner_equals_admin_panics() {
     let env = new_env();
     let admin = Address::generate(&env);
@@ -48,11 +49,11 @@ fn initialize_cosigner_equals_admin_panics() {
     let token_id = sac.address();
     let contract_id = env.register(crate::ProtectionPool, ());
     let client = crate::ProtectionPoolClient::new(&env, &contract_id);
-    client.initialize(&admin, &oracle, &admin, &token_id, &POOL_CAP);
+    let result = client.try_initialize(&admin, &oracle, &admin, &token_id, &POOL_CAP);
+    assert_eq!(result, Err(Ok(PoolError::CoSignerEqualsAdmin)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: pool cap must be positive")]
 fn initialize_zero_pool_cap_panics() {
     let env = new_env();
     let admin = Address::generate(&env);
@@ -62,7 +63,8 @@ fn initialize_zero_pool_cap_panics() {
     let token_id = sac.address();
     let contract_id = env.register(crate::ProtectionPool, ());
     let client = crate::ProtectionPoolClient::new(&env, &contract_id);
-    client.initialize(&admin, &oracle, &co_signer, &token_id, &0);
+    let result = client.try_initialize(&admin, &oracle, &co_signer, &token_id, &0);
+    assert_eq!(result, Err(Ok(PoolError::PoolCapNotPositive)));
 }
 
 #[test]
@@ -85,11 +87,11 @@ fn set_oracle_updates() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: oracle cannot equal coSigner")]
 fn set_oracle_equal_cosigner_panics() {
     let env = new_env();
     let s = setup(&env);
-    s.client.set_oracle(&s.co_signer);
+    let result = s.client.try_set_oracle(&s.co_signer);
+    assert_eq!(result, Err(Ok(PoolError::OracleEqualsCoSigner)));
 }
 
 #[test]
@@ -101,11 +103,11 @@ fn set_co_signer_updates() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: coSigner cannot equal oracle")]
 fn set_co_signer_equal_oracle_panics() {
     let env = new_env();
     let s = setup(&env);
-    s.client.set_co_signer(&s.oracle);
+    let result = s.client.try_set_co_signer(&s.oracle);
+    assert_eq!(result, Err(Ok(PoolError::CoSignerEqualsOracle)));
 }
 
 #[test]
@@ -122,20 +124,20 @@ fn set_pool_cap_increases() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: pool cap must be positive")]
 fn set_pool_cap_zero_panics() {
     let env = new_env();
     let s = setup(&env);
-    s.client.set_pool_cap(&0);
+    let result = s.client.try_set_pool_cap(&0);
+    assert_eq!(result, Err(Ok(PoolError::PoolCapNotPositive)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: pool cap below current total staked")]
 fn set_pool_cap_below_total_staked_panics() {
     let env = new_env();
     let s = setup(&env);
     staked_wallet(&env, &s);
-    s.client.set_pool_cap(&(MID_STAKE - 1));
+    let result = s.client.try_set_pool_cap(&(MID_STAKE - 1));
+    assert_eq!(result, Err(Ok(PoolError::PoolCapBelowTotalStaked)));
 }
 
 #[test]
@@ -155,11 +157,11 @@ fn transfer_admin_updates() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: new admin cannot equal coSigner")]
 fn transfer_admin_to_cosigner_panics() {
     let env = new_env();
     let s = setup(&env);
-    s.client.transfer_admin(&s.co_signer);
+    let result = s.client.try_transfer_admin(&s.co_signer);
+    assert_eq!(result, Err(Ok(PoolError::NewAdminEqualsCoSigner)));
 }
 
 #[test]
@@ -206,13 +208,12 @@ fn suspend_stake_blocks_nothing_about_withdrawal() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: stake suspended")]
 fn suspend_stake_blocks_claim_submission() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     s.client.suspend_stake(&staker);
-    s.client.submit_claim(
+    let result = s.client.try_submit_claim(
         &s.oracle,
         &staker,
         &tx_hash(&env, 1),
@@ -220,6 +221,7 @@ fn suspend_stake_blocks_claim_submission() {
         &3,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::StakeSuspended)));
 }
 
 #[test]
@@ -240,12 +242,12 @@ fn unsuspend_stake_restores_claim_eligibility() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no stake")]
 fn suspend_stake_on_nonexistent_stake_panics() {
     let env = new_env();
     let s = setup(&env);
     let random = Address::generate(&env);
-    s.client.suspend_stake(&random);
+    let result = s.client.try_suspend_stake(&random);
+    assert_eq!(result, Err(Ok(PoolError::NoStake)));
 }
 
 /// Mutation-testing gap fix (2026-07-22 re-run, 485 mutants, 10 missed).
@@ -308,14 +310,14 @@ fn unsuspend_stake_resets_rule_b_clock_for_active_claim() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no stake")]
 fn suspend_stake_after_withdraw_panics() {
-    // Reaches "SAFU: no stake" (amount<=0), not "already withdrawn" —
-    // same check-ordering note as set_beneficiary_after_withdraw_panics
-    // in stake_tests.rs.
+    // Reaches PoolError::NoStake (amount<=0), not AlreadyWithdrawn — same
+    // check-ordering note as set_beneficiary_after_withdraw_panics in
+    // stake_tests.rs.
     let env = new_env();
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
     s.client.withdraw(&staker, &ben);
-    s.client.suspend_stake(&staker);
+    let result = s.client.try_suspend_stake(&staker);
+    assert_eq!(result, Err(Ok(PoolError::NoStake)));
 }

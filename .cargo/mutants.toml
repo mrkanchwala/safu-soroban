@@ -55,13 +55,15 @@ exclude_re = [
     # killed by points_formula_exact_values_at_all_day_tier_boundaries.
     "replace > with >= in compute_points_for_record",
 
-    # stake.rs stake() re-stake guard (line 126 ONLY — the pool-cap
-    # check at line 134 also mutates `>`→`>=` but is catchable and IS
-    # tested; the line anchor keeps it in scope): `existing.amount > 0
-    # && !existing.withdrawn` → `>= 0`. Equivalent by the same
-    # amount==0 ⇒ withdrawn==true invariant as the lib.rs views above.
-    # LINE-NUMBER SENSITIVE: re-anchor if stake.rs lines shift.
-    "stake\\.rs:126:.*replace > with >= in stake",
+    # stake.rs stake() re-stake guard (line 137 ONLY — re-anchored
+    # 2026-07-31 after the typed-errors-conversion refactor shifted
+    # this line from 126; the pool-cap check at line 145 also mutates
+    # `>`→`>=` but is catchable and IS tested; the line anchor keeps
+    # it in scope): `existing.amount > 0 && !existing.withdrawn` →
+    # `>= 0`. Equivalent by the same amount==0 ⇒ withdrawn==true
+    # invariant as the lib.rs views above. LINE-NUMBER SENSITIVE:
+    # re-anchor if stake.rs lines shift.
+    "stake\\.rs:137:.*replace > with >= in stake",
 
     # 11th exclusion, added 2026-07-22 after the points-burn-mechanism
     # mutation re-run (485 mutants, 10 missed — 9 real gaps closed with

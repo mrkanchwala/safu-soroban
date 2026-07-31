@@ -4,6 +4,7 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::Address;
 
 use super::common::*;
+use crate::error::PoolError;
 
 #[test]
 fn stake_at_min_bound_succeeds() {
@@ -24,39 +25,38 @@ fn stake_at_max_bound_succeeds() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: stake out of range")]
 fn stake_below_min_panics() {
     let env = new_env();
     let s = setup(&env);
     let amount = MIN_STAKE - 1;
     let staker = new_funded_address(&env, &s, amount);
     let ben = Address::generate(&env);
-    s.client.stake(&staker, &amount, &ben);
+    let result = s.client.try_stake(&staker, &amount, &ben);
+    assert_eq!(result, Err(Ok(PoolError::StakeOutOfRange)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: stake out of range")]
 fn stake_above_max_panics() {
     let env = new_env();
     let s = setup(&env);
     let amount = MAX_STAKE + 1;
     let staker = new_funded_address(&env, &s, amount);
     let ben = Address::generate(&env);
-    s.client.stake(&staker, &amount, &ben);
+    let result = s.client.try_stake(&staker, &amount, &ben);
+    assert_eq!(result, Err(Ok(PoolError::StakeOutOfRange)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: stake must be positive")]
 fn stake_zero_panics() {
     let env = new_env();
     let s = setup(&env);
     let staker = new_funded_address(&env, &s, 0);
     let ben = Address::generate(&env);
-    s.client.stake(&staker, &0, &ben);
+    let result = s.client.try_stake(&staker, &0, &ben);
+    assert_eq!(result, Err(Ok(PoolError::StakeNotPositive)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: stake must be positive")]
 fn stake_negative_panics() {
     let env = new_env();
     let s = setup(&env);
@@ -64,19 +64,20 @@ fn stake_negative_panics() {
     let ben = Address::generate(&env);
     // The amount<=0 check runs BEFORE the range check, so negative hits
     // "must be positive" first — not "out of range" (verified by running
-    // this test; the two panics are easy to mix up by inspection alone).
-    s.client.stake(&staker, &-1, &ben);
+    // this test; the two errors are easy to mix up by inspection alone).
+    let result = s.client.try_stake(&staker, &-1, &ben);
+    assert_eq!(result, Err(Ok(PoolError::StakeNotPositive)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: already staked")]
 fn stake_twice_without_withdraw_panics() {
     let env = new_env();
     let s = setup(&env);
     let staker = new_funded_address(&env, &s, MID_STAKE * 2);
     let ben = Address::generate(&env);
     s.client.stake(&staker, &MID_STAKE, &ben);
-    s.client.stake(&staker, &MID_STAKE, &ben);
+    let result = s.client.try_stake(&staker, &MID_STAKE, &ben);
+    assert_eq!(result, Err(Ok(PoolError::AlreadyStaked)));
 }
 
 #[test]
@@ -91,7 +92,6 @@ fn stake_after_withdraw_succeeds() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: pool cap exceeded")]
 fn stake_exceeding_pool_cap_panics() {
     // Per-staker max is architecturally always 1.25% of the pool cap
     // (MAX_STAKE_BPS is a fixed ratio, not an absolute), so filling a
@@ -113,43 +113,44 @@ fn stake_exceeding_pool_cap_panics() {
 
     let one_more = new_funded_address(&env, &s, min_for_cap);
     let ben = Address::generate(&env);
-    s.client.stake(&one_more, &min_for_cap, &ben);
+    let result = s.client.try_stake(&one_more, &min_for_cap, &ben);
+    assert_eq!(result, Err(Ok(PoolError::PoolCapExceeded)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: beneficiary cannot be staker")]
 fn stake_beneficiary_equals_staker_panics() {
     let env = new_env();
     let s = setup(&env);
     let staker = new_funded_address(&env, &s, MID_STAKE);
-    s.client.stake(&staker, &MID_STAKE, &staker);
+    let result = s.client.try_stake(&staker, &MID_STAKE, &staker);
+    assert_eq!(result, Err(Ok(PoolError::BeneficiaryIsStaker)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: beneficiary cannot be oracle")]
 fn stake_beneficiary_equals_oracle_panics() {
     let env = new_env();
     let s = setup(&env);
     let staker = new_funded_address(&env, &s, MID_STAKE);
-    s.client.stake(&staker, &MID_STAKE, &s.oracle);
+    let result = s.client.try_stake(&staker, &MID_STAKE, &s.oracle);
+    assert_eq!(result, Err(Ok(PoolError::BeneficiaryIsOracle)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: beneficiary cannot be admin")]
 fn stake_beneficiary_equals_admin_panics() {
     let env = new_env();
     let s = setup(&env);
     let staker = new_funded_address(&env, &s, MID_STAKE);
-    s.client.stake(&staker, &MID_STAKE, &s.admin);
+    let result = s.client.try_stake(&staker, &MID_STAKE, &s.admin);
+    assert_eq!(result, Err(Ok(PoolError::BeneficiaryIsAdmin)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: beneficiary cannot be coSigner")]
 fn stake_beneficiary_equals_cosigner_panics() {
     let env = new_env();
     let s = setup(&env);
     let staker = new_funded_address(&env, &s, MID_STAKE);
-    s.client.stake(&staker, &MID_STAKE, &s.co_signer);
+    let result = s.client.try_stake(&staker, &MID_STAKE, &s.co_signer);
+    assert_eq!(result, Err(Ok(PoolError::BeneficiaryIsCoSigner)));
 }
 
 #[test]
@@ -166,27 +167,26 @@ fn withdraw_returns_principal() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no stake")]
 fn withdraw_without_stake_panics() {
     let env = new_env();
     let s = setup(&env);
     let random = Address::generate(&env);
     let ben = Address::generate(&env);
-    s.client.withdraw(&random, &ben);
+    let result = s.client.try_withdraw(&random, &ben);
+    assert_eq!(result, Err(Ok(PoolError::NoStake)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: wrong beneficiary")]
 fn withdraw_wrong_beneficiary_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     let wrong = Address::generate(&env);
-    s.client.withdraw(&staker, &wrong);
+    let result = s.client.try_withdraw(&staker, &wrong);
+    assert_eq!(result, Err(Ok(PoolError::WrongBeneficiary)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim active")]
 fn withdraw_blocked_while_claim_active() {
     let env = new_env();
     let s = setup(&env);
@@ -199,7 +199,8 @@ fn withdraw_blocked_while_claim_active() {
         &3,
         &now_ts(&env),
     );
-    s.client.withdraw(&staker, &ben);
+    let result = s.client.try_withdraw(&staker, &ben);
+    assert_eq!(result, Err(Ok(PoolError::ClaimActive)));
 }
 
 #[test]
@@ -213,30 +214,29 @@ fn set_beneficiary_updates_target() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: wrong beneficiary")]
 fn set_beneficiary_old_target_no_longer_works() {
     let env = new_env();
     let s = setup(&env);
     let (staker, old_ben) = staked_wallet(&env, &s);
     let new_ben = Address::generate(&env);
     s.client.set_beneficiary(&staker, &new_ben);
-    s.client.withdraw(&staker, &old_ben);
+    let result = s.client.try_withdraw(&staker, &old_ben);
+    assert_eq!(result, Err(Ok(PoolError::WrongBeneficiary)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no stake")]
 fn set_beneficiary_after_withdraw_panics() {
-    // Reaches "SAFU: no stake" (the amount<=0 check), not "stake
-    // forfeited" — that check runs first and a full withdraw zeroes
-    // amount, so the withdrawn-specific check below it is unreachable
-    // via this exact path (still real defensive code, just not what
-    // fires here).
+    // Reaches PoolError::NoStake (the amount<=0 check), not StakeForfeited
+    // — that check runs first and a full withdraw zeroes amount, so the
+    // withdrawn-specific check below it is unreachable via this exact
+    // path (still real defensive code, just not what fires here).
     let env = new_env();
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
     s.client.withdraw(&staker, &ben);
     let new_ben = Address::generate(&env);
-    s.client.set_beneficiary(&staker, &new_ben);
+    let result = s.client.try_set_beneficiary(&staker, &new_ben);
+    assert_eq!(result, Err(Ok(PoolError::NoStake)));
 }
 
 #[test]
@@ -257,7 +257,6 @@ fn emergency_exit_works_unpaused_too() {
 }
 
 #[test]
-#[should_panic(expected = "SAFU: claim active")]
 fn emergency_exit_blocked_while_claim_active() {
     let env = new_env();
     let s = setup(&env);
@@ -270,17 +269,18 @@ fn emergency_exit_blocked_while_claim_active() {
         &3,
         &now_ts(&env),
     );
-    s.client.emergency_exit(&staker);
+    let result = s.client.try_emergency_exit(&staker);
+    assert_eq!(result, Err(Ok(PoolError::ClaimActive)));
 }
 
 #[test]
-#[should_panic(expected = "SAFU: no active stake")]
 fn emergency_exit_after_withdraw_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
     s.client.withdraw(&staker, &ben);
-    s.client.emergency_exit(&staker);
+    let result = s.client.try_emergency_exit(&staker);
+    assert_eq!(result, Err(Ok(PoolError::NoActiveStake)));
 }
 
 #[test]

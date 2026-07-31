@@ -30,11 +30,21 @@
 //! non-completed prior claim instead of only Active/PendingTime, double-
 //! releasing when overriding an already-cancelled claim_id. All fixed
 //! together — see the affected functions below for what changed and why.
+//!
+//! CONVERTED 2026-07-31: `panic!("SAFU: ...")` -> `Result<_, PoolError>`,
+//! same conditions/order, no behavior change beyond a typed error code
+//! instead of an opaque panic message — see error.rs and
+//! `outputs/2026-07-31_plan-eng-review-safu-soroban-typed-errors.md`
+//! (research-ops repo). `tier_ratio`/`tier_cap` (internal helpers called
+//! from several functions below) became fallible too, since the invalid-
+//! tier check they own is externally reachable from submit_claim/
+//! approve_override/execute_override's caller-supplied `tier` argument.
 
 use soroban_sdk::{contractevent, Address, Bytes, BytesN, Env};
 use soroban_sdk::token::TokenClient;
 use soroban_sdk::xdr::ToXdr;
 
+use crate::error::PoolError;
 use crate::stake;
 use crate::storage;
 use crate::types::{
@@ -115,19 +125,19 @@ pub struct OverrideCancelled {
 // Helpers — exact formulas, per KB §1b.
 // -----------------------------------------------------------------------
 
-fn tier_ratio(tier: u32) -> i128 {
+fn tier_ratio(tier: u32) -> Result<i128, PoolError> {
     match tier {
-        1 => TIER_A_RATIO,
-        2 => TIER_B_RATIO,
-        3 => TIER_C_RATIO,
-        _ => panic!("SAFU: invalid tier"),
+        1 => Ok(TIER_A_RATIO),
+        2 => Ok(TIER_B_RATIO),
+        3 => Ok(TIER_C_RATIO),
+        _ => Err(PoolError::InvalidTier),
     }
 }
 
 /// `stake × tier_ratio × TIER_COVERAGE_BPS / 10_000` — two knobs (ratio,
-/// coverage-bps), not one flat multiplier. Panics on an invalid tier.
-pub fn tier_cap(stake_amount: i128, tier: u32) -> i128 {
-    stake_amount * tier_ratio(tier) * TIER_COVERAGE_BPS / TIER_BPS_DENOMINATOR
+/// coverage-bps), not one flat multiplier. Errors on an invalid tier.
+pub fn tier_cap(stake_amount: i128, tier: u32) -> Result<i128, PoolError> {
+    Ok(stake_amount * tier_ratio(tier)? * TIER_COVERAGE_BPS / TIER_BPS_DENOMINATOR)
 }
 
 /// Admission-side daily cap on new-claim entitlement. Separate counter
@@ -256,61 +266,62 @@ pub fn submit_claim(
     entitlement: i128,
     tier: u32,
     hack_timestamp: u64,
-) -> BytesN<32> {
+) -> Result<BytesN<32>, PoolError> {
     storage::require_not_paused(env);
 
     let admin = storage::get_admin(env);
     let oracle = storage::get_oracle(env);
     if caller != &oracle && caller != &admin {
-        panic!("SAFU: caller must be oracle or admin");
+        return Err(PoolError::CallerNotOracleOrAdmin);
     }
     caller.require_auth();
 
     if entitlement <= 0 {
-        panic!("SAFU: entitlement must be positive");
+        return Err(PoolError::EntitlementNotPositive);
     }
-    tier_ratio(tier); // panics on invalid tier
+    tier_ratio(tier)?; // errors on invalid tier
 
-    let mut stake_record: StakeRecord = storage::get_stake(env, wallet).expect("SAFU: no stake");
+    let mut stake_record: StakeRecord =
+        storage::get_stake(env, wallet).ok_or(PoolError::NoStake)?;
     if stake_record.amount <= 0 {
-        panic!("SAFU: no active stake");
+        return Err(PoolError::NoActiveStake);
     }
     if stake_record.withdrawn {
-        panic!("SAFU: stake already withdrawn");
+        return Err(PoolError::AlreadyWithdrawn);
     }
     if stake_record.suspended {
-        panic!("SAFU: stake suspended");
+        return Err(PoolError::StakeSuspended);
     }
     if stake_record.active_claim_id.is_some() {
-        panic!("SAFU: claim already active for this stake");
+        return Err(PoolError::ClaimAlreadyActiveForStake);
     }
 
-    let cap = tier_cap(stake_record.amount, tier);
+    let cap = tier_cap(stake_record.amount, tier)?;
     if entitlement > cap {
-        panic!("SAFU: entitlement exceeds tier cap");
+        return Err(PoolError::EntitlementExceedsTierCap);
     }
 
     let now_ts = env.ledger().timestamp();
     if hack_timestamp > now_ts {
-        panic!("SAFU: hack timestamp in the future");
+        return Err(PoolError::HackTimestampInFuture);
     }
     if hack_timestamp < stake_record.staked_at_timestamp {
-        panic!("SAFU: hack predates stake");
+        return Err(PoolError::HackPredatesStake);
     }
     if now_ts > hack_timestamp + CLAIM_WINDOW_SECONDS {
-        panic!("SAFU: claim window expired");
+        return Err(PoolError::ClaimWindowExpired);
     }
 
     let total_staked = storage::get_total_staked(env);
     let total_allocated = storage::get_total_allocated(env);
     if total_allocated + entitlement > total_staked {
-        panic!("SAFU: insolvent");
+        return Err(PoolError::Insolvent);
     }
 
     let day = current_day(env);
     let (day_entitlement, day_count) = storage::get_daily_entitlement(env, day);
     if day_entitlement + entitlement > stress_cap(env) {
-        panic!("SAFU: daily stress cap exceeded");
+        return Err(PoolError::DailyStressCapExceeded);
     }
 
     let is_oracle_caller = caller == &oracle;
@@ -318,14 +329,14 @@ pub fn submit_claim(
         let total_stakers = storage::get_total_stakers(env);
         let limit = (total_stakers / 10).max(1);
         if day_count >= limit {
-            panic!("SAFU: oracle daily claim-count limit reached");
+            return Err(PoolError::OracleDailyClaimLimitReached);
         }
     }
 
     let claim_id = compute_claim_id(env, wallet, tx_hash);
     if let Some(existing) = storage::get_claim(env, &claim_id) {
         if existing.status != ClaimStatus::Unused {
-            panic!("SAFU: claim already exists");
+            return Err(PoolError::ClaimAlreadyExists);
         }
     }
 
@@ -378,7 +389,7 @@ pub fn submit_claim(
     }
     .publish(env);
 
-    claim_id
+    Ok(claim_id)
 }
 
 // -----------------------------------------------------------------------
@@ -391,19 +402,19 @@ pub fn submit_claim(
 // approve_claim (Rule A) before anything is forfeited.
 // -----------------------------------------------------------------------
 
-pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) {
+pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
     storage::require_not_paused(env);
 
-    let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
+    let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchClaim)?;
     if claim.status != ClaimStatus::PendingTime {
-        panic!("SAFU: claim not pending");
+        return Err(PoolError::ClaimNotPending);
     }
 
     let stake_record: StakeRecord =
-        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+        storage::get_stake(env, &claim.wallet).ok_or(PoolError::NoStake)?;
     let now_ledger = env.ledger().sequence();
     if now_ledger < stake_record.staked_at_ledger + TIME_GATE_LEDGERS {
-        panic!("SAFU: time gate not yet met");
+        return Err(PoolError::TimeGateNotMet);
     }
 
     claim.status = ClaimStatus::AwaitingApproval;
@@ -417,6 +428,7 @@ pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) {
         claim_id: claim_id.clone(),
     }
     .publish(env);
+    Ok(())
 }
 
 // -----------------------------------------------------------------------
@@ -430,24 +442,24 @@ pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) {
 // back to the pool instead.
 // -----------------------------------------------------------------------
 
-pub fn approve_claim(env: &Env, claim_id: &BytesN<32>) {
+pub fn approve_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
     storage::require_not_paused(env);
 
-    let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
+    let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchClaim)?;
     claim.wallet.require_auth();
 
     if claim.status != ClaimStatus::AwaitingApproval {
-        panic!("SAFU: claim not awaiting approval");
+        return Err(PoolError::ClaimNotAwaitingApproval);
     }
     let now_ledger = env.ledger().sequence();
     if now_ledger > claim.approve_deadline_ledger {
-        panic!("SAFU: approval window expired");
+        return Err(PoolError::ApprovalWindowExpired);
     }
 
     let mut stake_record: StakeRecord =
-        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+        storage::get_stake(env, &claim.wallet).ok_or(PoolError::NoStake)?;
     if stake_record.suspended {
-        panic!("SAFU: stake suspended");
+        return Err(PoolError::StakeSuspended);
     }
 
     let points_burned = activate_claim(env, &mut stake_record, &mut claim);
@@ -462,6 +474,7 @@ pub fn approve_claim(env: &Env, claim_id: &BytesN<32>) {
         points_burned,
     }
     .publish(env);
+    Ok(())
 }
 
 // -----------------------------------------------------------------------
@@ -474,13 +487,13 @@ pub fn approve_claim(env: &Env, claim_id: &BytesN<32>) {
 // restore — just release the reservation and unblock the wallet.
 // -----------------------------------------------------------------------
 
-pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) {
-    let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
+pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchClaim)?;
     if claim.status != ClaimStatus::AwaitingApproval {
-        panic!("SAFU: claim not awaiting approval");
+        return Err(PoolError::ClaimNotAwaitingApproval);
     }
     let mut stake_record: StakeRecord =
-        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+        storage::get_stake(env, &claim.wallet).ok_or(PoolError::NoStake)?;
     // Found in adversarial re-review 2026-07-22, after the initial
     // implementation: blocker #1's fix only reset the clock on unsuspend
     // — it never stopped a suspended staker's deadline from expiring
@@ -491,11 +504,11 @@ pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) {
     // this: it can only ever expire after an explicit unsuspend, which
     // itself grants a fresh full window.
     if stake_record.suspended {
-        panic!("SAFU: stake suspended");
+        return Err(PoolError::StakeSuspended);
     }
     let now_ledger = env.ledger().sequence();
     if now_ledger <= claim.approve_deadline_ledger {
-        panic!("SAFU: approval window not yet expired");
+        return Err(PoolError::ApprovalWindowNotExpired);
     }
 
     let total_allocated = storage::get_total_allocated(env);
@@ -514,6 +527,7 @@ pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) {
         released: claim.entitlement,
     }
     .publish(env);
+    Ok(())
 }
 
 // -----------------------------------------------------------------------
@@ -526,26 +540,26 @@ pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) {
 // way since `withdrawn=true` already blocks every relevant path.
 // -----------------------------------------------------------------------
 
-pub fn expire_stale_claim(env: &Env, claim_id: &BytesN<32>) {
-    let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
+pub fn expire_stale_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchClaim)?;
     if claim.status != ClaimStatus::Active {
-        panic!("SAFU: claim not active");
+        return Err(PoolError::ClaimNotActive);
     }
     if claim.streamed >= claim.entitlement {
-        panic!("SAFU: claim already fully streamed");
+        return Err(PoolError::ClaimFullyStreamed);
     }
     let mut stake_record: StakeRecord =
-        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+        storage::get_stake(env, &claim.wallet).ok_or(PoolError::NoStake)?;
     // Same fairness fix as expire_pending_approval above, found in the
     // same adversarial re-review — a suspended staker's Rule B clock must
     // not be allowed to expire while they're still frozen out of
     // collecting.
     if stake_record.suspended {
-        panic!("SAFU: stake suspended");
+        return Err(PoolError::StakeSuspended);
     }
     let now_ledger = env.ledger().sequence();
     if now_ledger.saturating_sub(claim.last_collected_ledger) <= COLLECTION_INACTIVITY_LEDGERS {
-        panic!("SAFU: claim not yet stale");
+        return Err(PoolError::ClaimNotStale);
     }
 
     let remaining = claim.entitlement - claim.streamed;
@@ -565,6 +579,7 @@ pub fn expire_stale_claim(env: &Env, claim_id: &BytesN<32>) {
         released: remaining,
     }
     .publish(env);
+    Ok(())
 }
 
 // -----------------------------------------------------------------------
@@ -573,31 +588,35 @@ pub fn expire_stale_claim(env: &Env, claim_id: &BytesN<32>) {
 // oracle/admin/permissionless).
 // -----------------------------------------------------------------------
 
-pub fn claim_stream(env: &Env, claim_id: &BytesN<32>, beneficiary: &Address) -> i128 {
+pub fn claim_stream(
+    env: &Env,
+    claim_id: &BytesN<32>,
+    beneficiary: &Address,
+) -> Result<i128, PoolError> {
     storage::require_not_paused(env);
 
-    let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
+    let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchClaim)?;
     claim.wallet.require_auth();
 
     if claim.status != ClaimStatus::Active {
-        panic!("SAFU: claim not active");
+        return Err(PoolError::ClaimNotActive);
     }
     let now_ledger = env.ledger().sequence();
     if now_ledger < claim.cooldown_ends_ledger {
-        panic!("SAFU: cooldown not passed");
+        return Err(PoolError::CooldownNotPassed);
     }
     if claim.streamed >= claim.entitlement {
-        panic!("SAFU: fully streamed");
+        return Err(PoolError::ClaimFullyStreamed);
     }
 
     let stake_record: StakeRecord =
-        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+        storage::get_stake(env, &claim.wallet).ok_or(PoolError::NoStake)?;
     if stake_record.suspended {
-        panic!("SAFU: stake suspended");
+        return Err(PoolError::StakeSuspended);
     }
     let expected_hash = env.crypto().sha256(&beneficiary.to_xdr(env)).to_bytes();
     if expected_hash != stake_record.beneficiary_hash {
-        panic!("SAFU: wrong beneficiary");
+        return Err(PoolError::WrongBeneficiary);
     }
 
     let elapsed_end = now_ledger.min(claim.vesting_ends_ledger);
@@ -605,7 +624,7 @@ pub fn claim_stream(env: &Env, claim_id: &BytesN<32>, beneficiary: &Address) -> 
     let vested_total = claim.entitlement * elapsed / (VESTING_LEDGERS as i128);
     let claimable = vested_total - claim.streamed;
     if claimable <= 0 {
-        panic!("SAFU: nothing vested yet");
+        return Err(PoolError::NothingVested);
     }
 
     let day = current_day(env);
@@ -624,7 +643,7 @@ pub fn claim_stream(env: &Env, claim_id: &BytesN<32>, beneficiary: &Address) -> 
     let available_today = cap.saturating_sub(daily_outflow_so_far);
     let transfer_amount = claimable.min(available_today);
     if transfer_amount <= 0 {
-        panic!("SAFU: daily outflow cap reached, try again tomorrow");
+        return Err(PoolError::DailyOutflowCapReached);
     }
 
     claim.streamed += transfer_amount;
@@ -658,18 +677,18 @@ pub fn claim_stream(env: &Env, claim_id: &BytesN<32>, beneficiary: &Address) -> 
     let token = TokenClient::new(env, &storage::get_xlm_token(env));
     token.transfer(&env.current_contract_address(), beneficiary, &transfer_amount);
 
-    transfer_amount
+    Ok(transfer_amount)
 }
 
 // -----------------------------------------------------------------------
 // cancel_claim — admin-only, false-positive reversal.
 // -----------------------------------------------------------------------
 
-pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) {
+pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
     let admin = storage::get_admin(env);
     admin.require_auth();
 
-    let mut claim: Claim = storage::get_claim(env, claim_id).expect("SAFU: no such claim");
+    let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchClaim)?;
     // CHANGED 2026-07-22 (eng review blocker #4): AwaitingApproval added.
     // Nothing forfeits during AwaitingApproval (same as PendingTime), so
     // it falls into the same no-penalty branch below — without this, admin
@@ -678,7 +697,7 @@ pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) {
         && claim.status != ClaimStatus::PendingTime
         && claim.status != ClaimStatus::AwaitingApproval
     {
-        panic!("SAFU: claim not cancellable");
+        return Err(PoolError::ClaimNotCancellable);
     }
 
     let unstreamed = claim.entitlement - claim.streamed;
@@ -688,7 +707,7 @@ pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) {
     storage::set_total_allocated(env, total_allocated.saturating_sub(unstreamed));
 
     let mut stake_record: StakeRecord =
-        storage::get_stake(env, &claim.wallet).expect("SAFU: no stake");
+        storage::get_stake(env, &claim.wallet).ok_or(PoolError::NoStake)?;
 
     // Active: the stake was already forfeited at activation — restore it
     // and apply the 365-day penalty lock. PendingTime/AwaitingApproval:
@@ -719,6 +738,7 @@ pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) {
         claim_id: claim_id.clone(),
     }
     .publish(env);
+    Ok(())
 }
 
 // -----------------------------------------------------------------------
@@ -734,20 +754,20 @@ pub fn approve_override(
     tx_hash: &BytesN<32>,
     entitlement: i128,
     tier: u32,
-) {
+) -> Result<(), PoolError> {
     storage::require_not_paused(env);
 
     let admin = storage::get_admin(env);
     let co_signer = storage::get_co_signer(env);
     if caller != &admin && caller != &co_signer {
-        panic!("SAFU: caller must be admin or coSigner");
+        return Err(PoolError::CallerNotAdminOrCoSigner);
     }
     caller.require_auth();
 
     if entitlement <= 0 {
-        panic!("SAFU: entitlement must be positive");
+        return Err(PoolError::EntitlementNotPositive);
     }
-    tier_ratio(tier);
+    tier_ratio(tier)?;
 
     let claim_id = compute_claim_id(env, wallet, tx_hash);
 
@@ -762,7 +782,7 @@ pub fn approve_override(
         });
 
     if req.entitlement != entitlement || req.tier != tier {
-        panic!("SAFU: override params mismatch with pending request");
+        return Err(PoolError::OverrideParamsMismatch);
     }
 
     if caller == &admin {
@@ -784,7 +804,7 @@ pub fn approve_override(
         || co_signer == admin;
 
     if ready {
-        execute_override(env, &claim_id, &req);
+        execute_override(env, &claim_id, &req)?;
         // Deleted, not reset — matches V8's `_executeOverride`, which
         // does `delete pendingOverrides[claimId]` unconditionally before
         // anything else runs. This also means cancel_pending_override
@@ -795,9 +815,10 @@ pub fn approve_override(
     } else {
         storage::set_override(env, &claim_id, &req);
     }
+    Ok(())
 }
 
-fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
+fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) -> Result<(), PoolError> {
     let existing = storage::get_claim(env, claim_id);
     // Bug 3 fix (eng review 2026-07-22): if this is a re-execution/
     // correction of an already-Active, already-partially-streamed claim,
@@ -808,7 +829,7 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
     let mut carried_streamed: i128 = 0;
     if let Some(ref c) = existing {
         if c.status == ClaimStatus::Completed {
-            panic!("SAFU: claim already completed");
+            return Err(PoolError::ClaimAlreadyCompleted);
         }
         // Only release when the PRIOR claim actually held a live
         // reservation (Active or PendingTime) — verified against V8's
@@ -837,7 +858,7 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
     }
 
     let mut stake_record: StakeRecord =
-        storage::get_stake(env, &req.wallet).expect("SAFU: no stake");
+        storage::get_stake(env, &req.wallet).ok_or(PoolError::NoStake)?;
 
     // Bug 2 fix (eng review 2026-07-22): enforce the one-wallet-one-claim
     // invariant here too — submit_claim already refused a second claim
@@ -849,7 +870,7 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
     // allowed — only a genuinely different, conflicting claim is blocked.
     if let Some(active_id) = &stake_record.active_claim_id {
         if active_id != claim_id {
-            panic!("SAFU: wallet already has a different active claim");
+            return Err(PoolError::WalletHasDifferentActiveClaim);
         }
     }
 
@@ -859,12 +880,12 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
     // reading `stakes[wallet_].amount` directly.
     let original_stake_amount = stake_record.amount;
     if original_stake_amount <= 0 {
-        panic!("SAFU: no stake amount to base override on");
+        return Err(PoolError::NoStakeAmountForOverride);
     }
 
-    let cap = tier_cap(original_stake_amount, req.tier);
+    let cap = tier_cap(original_stake_amount, req.tier)?;
     if req.entitlement > cap {
-        panic!("SAFU: entitlement exceeds tier cap");
+        return Err(PoolError::EntitlementExceedsTierCap);
     }
 
     // If this stake was already forfeited (a same-claim-id re-execution —
@@ -884,7 +905,7 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
     };
     let total_allocated = storage::get_total_allocated(env);
     if total_allocated + req.entitlement > effective_total_staked {
-        panic!("SAFU: insolvent");
+        return Err(PoolError::Insolvent);
     }
     storage::set_total_allocated(env, total_allocated + req.entitlement);
 
@@ -929,6 +950,7 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
         claim_id: claim_id.clone(),
     }
     .publish(env);
+    Ok(())
 }
 
 /// Verified against the live V8 source 2026-07-14 (was previously
@@ -939,21 +961,27 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
 /// ALSO deletes the request (see approve_override), so a post-execution
 /// call here naturally fails with the same "no pending override" error
 /// as one that never existed — exactly what `storage::get_override(...)
-/// .expect(...)` below already does, without needing a Claim-status
+/// .ok_or(...)` below already does, without needing a Claim-status
 /// lookup at all.
-pub fn cancel_pending_override(env: &Env, caller: &Address, wallet: &Address, tx_hash: &BytesN<32>) {
+pub fn cancel_pending_override(
+    env: &Env,
+    caller: &Address,
+    wallet: &Address,
+    tx_hash: &BytesN<32>,
+) -> Result<(), PoolError> {
     let admin = storage::get_admin(env);
     if caller != &admin {
-        panic!("SAFU: caller must be admin");
+        return Err(PoolError::CallerNotAdmin);
     }
     admin.require_auth();
 
     let claim_id = compute_claim_id(env, wallet, tx_hash);
-    storage::get_override(env, &claim_id).expect("SAFU: no pending override");
+    storage::get_override(env, &claim_id).ok_or(PoolError::NoPendingOverride)?;
     storage::remove_override(env, &claim_id);
 
     OverrideCancelled {
         claim_id: claim_id.clone(),
     }
     .publish(env);
+    Ok(())
 }
