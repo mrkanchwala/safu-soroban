@@ -1,0 +1,35 @@
+# Isolated install/run environment for Komet (runtimeverification/komet) —
+# a Soroban fuzzing + symbolic-verification tool. Kept in its own container
+# rather than run on the host because its installer is a curl-pipe-to-bash
+# script (bash <(curl https://kframework.org/install)) pulling in the Nix-
+# based `kup` package manager + the full K-framework/KWasm toolchain — real,
+# unaudited third-party install surface, isolated here on request.
+#
+# Build:  docker build -f Dockerfile.komet -t safu-komet .
+# Run:    docker run --rm -it safu-komet bash
+
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates bash git build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# The K-framework installer explicitly refuses to run as root (its own
+# safety check, not a bug here) — needs a real non-root user.
+RUN useradd -m -s /bin/bash komet
+WORKDIR /work
+COPY . /work
+RUN chown -R komet:komet /work
+USER komet
+WORKDIR /home/komet
+
+SHELL ["/bin/bash", "-c"]
+
+# The installer has a hidden `read -p "...install nix? [y/N]"` prompt not
+# gated by any flag (checked its actual source — --yes is never referenced).
+# Piping "y" answers it non-interactively.
+RUN echo "y" | bash <(curl -fsSL https://kframework.org/install)
+ENV PATH="/home/komet/.kup/bin:${PATH}"
+RUN kup install komet
+
+CMD ["bash"]
