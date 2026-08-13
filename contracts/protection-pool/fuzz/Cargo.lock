@@ -1120,6 +1120,7 @@ name = "protection-pool-fuzz"
 version = "0.0.0"
 dependencies = [
  "arbitrary",
+ "ed25519-dalek",
  "libfuzzer-sys",
  "protection-pool",
  "soroban-sdk",

@@ -18,7 +18,13 @@
 
 #![no_main]
 
+//! T2/D1 note: same reasoning as fuzz_solvency.rs — `submit_claim`'s oracle
+//! path now verifies an Ed25519 signature, so this target signs each
+//! generated claim correctly instead of fuzzing the signature bytes, which
+//! would trap on essentially every input and be reported as a crash.
+
 use arbitrary::Arbitrary;
+use ed25519_dalek::{Signer, SigningKey};
 use libfuzzer_sys::fuzz_target;
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::token::StellarAssetClient;
@@ -61,9 +67,19 @@ fuzz_target!(|ops: Vec<Op>| {
     let token_id = sac.address();
     let token_admin = StellarAssetClient::new(&env, &token_id);
 
+    let oracle_key = SigningKey::from_bytes(&[7u8; 32]);
+    let oracle_pubkey = BytesN::from_array(&env, &oracle_key.verifying_key().to_bytes());
+
     let contract_id = env.register(ProtectionPool, ());
     let client = ProtectionPoolClient::new(&env, &contract_id);
-    client.initialize(&admins[0], &oracle, &co_signers[0], &token_id, &POOL_CAP);
+    client.initialize(
+        &admins[0],
+        &oracle,
+        &oracle_pubkey,
+        &co_signers[0],
+        &token_id,
+        &POOL_CAP,
+    );
 
     let wallets: Vec<Address> = (0..NUM_WALLETS)
         .map(|_| {
@@ -96,8 +112,22 @@ fuzz_target!(|ops: Vec<Op>| {
                 let h = &tx_hashes[(tx as usize) % NUM_TX_HASHES];
                 let now = env.ledger().timestamp();
                 let tier_val = 1 + (tier % 3) as u32;
+                let deadline = now + 3_600;
+                let payload = env.as_contract(&contract_id, || {
+                    protection_pool::testutils::build_approval_payload(
+                        &env,
+                        &wallets[i],
+                        h,
+                        entitlement,
+                        tier_val,
+                        now,
+                        deadline,
+                    )
+                });
+                let msg: Vec<u8> = payload.iter().collect();
+                let sig = BytesN::from_array(&env, &oracle_key.sign(&msg).to_bytes());
                 if let Ok(Ok(id)) = client.try_submit_claim(
-                    &oracle, &wallets[i], h, &entitlement, &tier_val, &now,
+                    &oracle, &wallets[i], h, &entitlement, &tier_val, &now, &deadline, &sig,
                 ) {
                     claims.push((id, beneficiaries[i].clone()));
                 }

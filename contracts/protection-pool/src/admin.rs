@@ -25,10 +25,22 @@ use crate::types::{ClaimStatus, StakeRecord, APPROVE_WINDOW_LEDGERS};
 /// into contract logic, and stays admin-adjustable afterward via
 /// `set_pool_cap` (mirrors V8's mutable `maxPoolSize`). A constant that's
 /// never referenced by any code path belongs in deploy docs, not source.
+///
+/// CHANGED for T2/D1: takes `oracle_pubkey` as well as `oracle`. The oracle
+/// has TWO identities in this contract — an `Address` (policy: auth, rate
+/// limit, beneficiary guard, admin invariants) and an Ed25519 pubkey
+/// (attestation: signature verification). Requiring both here is the
+/// "startup invariant that both are set" from the D1 eng review: it removes
+/// the window in which a deployment has a working oracle Address but no
+/// attestation key. `submit_claim` still fails closed on a missing key
+/// (`OraclePubKeyNotSet`) as defence in depth, but with this argument that
+/// state is unreachable on a fresh deploy.
+#[allow(clippy::too_many_arguments)]
 pub fn initialize(
     env: &Env,
     admin: &Address,
     oracle: &Address,
+    oracle_pubkey: &BytesN<32>,
     co_signer: &Address,
     xlm_token: &Address,
     pool_cap: i128,
@@ -54,6 +66,7 @@ pub fn initialize(
 
     storage::set_admin(env, admin);
     storage::set_oracle(env, oracle);
+    storage::set_oracle_pubkey(env, oracle_pubkey);
     storage::set_co_signer(env, co_signer);
     storage::set_xlm_token(env, xlm_token);
     storage::set_pool_cap(env, pool_cap);
@@ -224,6 +237,33 @@ pub fn set_oracle(env: &Env, new_oracle: &Address) -> Result<(), PoolError> {
         return Err(PoolError::OracleEqualsCoSigner);
     }
     storage::set_oracle(env, new_oracle);
+    storage::bump_instance_ttl(env);
+    Ok(())
+}
+
+/// Rotates the oracle's Ed25519 ATTESTATION key. Separate from `set_oracle`
+/// (which rotates the policy `Address`) — the two are distinct identities,
+/// see `storage::DataKey::OraclePubKey`.
+///
+/// Admin-only, same guard shape as `set_oracle`. Note what is deliberately
+/// NOT enforced: nothing checks that this key belongs to the same entity as
+/// the current oracle `Address`. It cannot be — an Ed25519 pubkey and a
+/// Stellar `Address` have no on-chain relationship to compare, and a
+/// contract-type oracle address has no pubkey at all. Keeping them
+/// consistent is an operational responsibility.
+///
+/// Rotation hazard, flagged rather than solved: signatures already in
+/// flight under the previous key stop verifying the moment this lands, and
+/// (per Blocker 3) they fail as an opaque host trap rather than a named
+/// error. Rotate during a quiet window and re-sign anything outstanding. A
+/// grace window accepting either key is the obvious mitigation but is
+/// deliberately out of D1 scope — it widens the attestation surface and
+/// belongs with the T3 hardening pass, not a testnet deliverable.
+pub fn set_oracle_pubkey(env: &Env, new_pubkey: &BytesN<32>) -> Result<(), PoolError> {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+
+    storage::set_oracle_pubkey(env, new_pubkey);
     storage::bump_instance_ttl(env);
     Ok(())
 }

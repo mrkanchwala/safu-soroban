@@ -88,8 +88,7 @@ fn run_blend_scenario(tier: u32, expected_entitlement: i128) {
     // labeled drain-shaped for this scenario. The contract itself has no
     // opinion on that; it only enforces entitlement <= tier_cap, and
     // this call not panicking is exactly that enforcement passing.
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &blend_tx_hash(&env),
         &expected_entitlement,
@@ -217,8 +216,7 @@ fn run_blend_scenario_demo(
     );
     pause();
 
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(env, s, &s.oracle,
         &staker,
         &blend_tx_hash(env),
         &expected_entitlement,

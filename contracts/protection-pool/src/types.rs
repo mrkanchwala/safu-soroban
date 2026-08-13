@@ -39,6 +39,53 @@ pub const VESTING_LEDGERS: u32 = 45 * LEDGERS_PER_DAY;
 /// a genuine paid claim (that forfeiture is permanent — do not conflate).
 pub const PENALTY_LOCK_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 
+// -----------------------------------------------------------------------
+// D1 (Tranche 2) — on-chain Ed25519 oracle approval verification.
+//
+// V8 has no equivalent to the two constants below: on EVM, `revokedApprovals`
+// is a permanent mapping, so a revocation simply never expires and no
+// deadline bound is needed to keep it alive. Soroban's `temporary()` storage
+// has a finite TTL, which introduces a failure mode EVM does not have — a
+// revocation that expires BEFORE the approval it revokes silently
+// un-revokes that approval. These two constants exist to make that failure
+// mode unreachable, and the const-assert below is what proves it rather
+// than leaving it to convention (eng review, Warning 6 / revocation-TTL
+// resolution, `outputs/2026-08-13_plan-eng-review-safu-t2-d1-ed25519.md`).
+// -----------------------------------------------------------------------
+
+/// Maximum lifetime of a single oracle approval signature, in real seconds.
+/// `submit_claim` rejects any `deadline` further out than this. Bounding it
+/// is what lets `REVOCATION_TTL_LEDGERS` provably outlive every deadline a
+/// valid approval can carry.
+pub const MAX_APPROVAL_WINDOW_SECONDS: u64 = 24 * 3_600;
+
+/// TTL applied to a revocation entry in `temporary()` storage.
+///
+/// A revocation only has to survive until the approval it revokes expires —
+/// after that, `SignatureExpired` rejects the approval anyway, so the
+/// revocation is no longer load-bearing and letting it be reclaimed is
+/// correct (and keeps revocation state bounded rather than growing forever).
+///
+/// Note the asymmetry that makes `temporary()` safe here: the entry records
+/// a REVOCATION, not a permission. Anyone extending its TTL — which anyone
+/// can do on Soroban, permissionlessly — only makes the revocation last
+/// LONGER. The failure direction is fail-closed. The one genuine hazard is
+/// a TTL shorter than the deadline, which the const-assert below rules out.
+pub const REVOCATION_TTL_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
+
+// The revocation must outlive the approval under every ledger close rate.
+// Ledgers nominally close ~5s apart, but that is a network property this
+// contract cannot depend on, so the check assumes a pathological 1 second
+// per ledger — the worst case for us, since faster ledgers burn TTL faster
+// in wall-clock terms. Under that assumption REVOCATION_TTL_LEDGERS covers
+// REVOCATION_TTL_LEDGERS seconds; requiring that to exceed the maximum
+// approval window makes "revocation outlives deadline" a compile-time fact.
+// At the nominal 5s/ledger the real margin is 7 days against a 24h bound.
+const _: () = assert!(
+    REVOCATION_TTL_LEDGERS as u64 >= MAX_APPROVAL_WINDOW_SECONDS,
+    "revocation TTL must outlive the longest legal approval deadline"
+);
+
 /// Points burn-on-claim mechanism (locked 2026-07-22, task plan
 /// `outputs/2026-07-22_task-plan-safu-points-burn-mechanism.md`, eng review
 /// `outputs/2026-07-22_plan-eng-review-safu-points-burn-mechanism.md`).

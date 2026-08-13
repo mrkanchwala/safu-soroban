@@ -378,9 +378,7 @@ fn override_on_awaiting_approval_claim_releases_prior_reservation() {
     let (staker, _ben) = staked_wallet(&env, &s);
     let hash = tx_hash(&env, 1);
     advance_days(&env, 90); // gate met -> submit_claim lands AwaitingApproval directly
-    let claim_id = s
-        .client
-        .submit_claim(&s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
     let claim = s.client.get_claim(&claim_id).unwrap();
     assert_eq!(claim.status, ClaimStatus::AwaitingApproval);
     assert_eq!(s.client.get_total_allocated(), ENTITLEMENT);
@@ -412,9 +410,7 @@ fn cancel_active_claim_then_override_does_not_double_release_allocation() {
     let hash = tx_hash(&env, 1);
 
     // First cycle: normal claim, then admin cancels it (false positive).
-    let claim_id = s
-        .client
-        .submit_claim(&s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
     s.client.cancel_claim(&claim_id);
     assert_eq!(s.client.get_total_allocated(), 0); // released once by cancel_claim
 
@@ -441,8 +437,7 @@ fn cancel_claim_restores_stake_without_needing_amount_field() {
     let env = new_env();
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,

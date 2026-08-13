@@ -25,6 +25,23 @@ mod types;
 
 pub use error::PoolError;
 
+/// Test- and fuzz-only surface, gated behind the `testutils` feature so it
+/// is never compiled into the deployed WASM.
+///
+/// Exists for one reason: the fuzz harness has to produce a VALID oracle
+/// signature for every `submit_claim` it generates. Fuzzing the 64 signature
+/// bytes directly would make essentially every generated input fail
+/// `ed25519_verify` — which traps — and libFuzzer treats a trap as a crash,
+/// so the run would drown in false findings and hide real ones (Stellar's own
+/// fuzzing guidance warns about exactly this, and `ed25519_verify`'s panic is
+/// a HOST trap we cannot route through `panic_with_error!`). Fixing the
+/// signature to a valid one over the fuzzed payload keeps the rest of the
+/// state machine fuzzable, which is what the targets are actually for.
+#[cfg(feature = "testutils")]
+pub mod testutils {
+    pub use crate::claim::build_approval_payload;
+}
+
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
 
 use crate::types::{Claim, StakeRecord};
@@ -36,19 +53,36 @@ pub struct ProtectionPool;
 impl ProtectionPool {
     /// One-time initialization. Guarded against re-invocation (vuln
     /// checklist V6) — see admin.rs.
+    #[allow(clippy::too_many_arguments)]
     pub fn initialize(
         env: Env,
         admin: Address,
         oracle: Address,
+        oracle_pubkey: BytesN<32>,
         co_signer: Address,
         xlm_token: Address,
         pool_cap: i128,
     ) -> Result<(), PoolError> {
-        admin::initialize(&env, &admin, &oracle, &co_signer, &xlm_token, pool_cap)
+        admin::initialize(
+            &env,
+            &admin,
+            &oracle,
+            &oracle_pubkey,
+            &co_signer,
+            &xlm_token,
+            pool_cap,
+        )
     }
 
     pub fn set_oracle(env: Env, new_oracle: Address) -> Result<(), PoolError> {
         admin::set_oracle(&env, &new_oracle)
+    }
+
+    /// T2/D1 — rotates the oracle's Ed25519 attestation key. Distinct from
+    /// `set_oracle`, which rotates the policy Address; see admin.rs for why
+    /// the two are separate identities and what rotation costs.
+    pub fn set_oracle_pubkey(env: Env, new_pubkey: BytesN<32>) -> Result<(), PoolError> {
+        admin::set_oracle_pubkey(&env, &new_pubkey)
     }
 
     pub fn set_co_signer(env: Env, new_co_signer: Address) -> Result<(), PoolError> {
@@ -115,6 +149,11 @@ impl ProtectionPool {
 
     // -- claims --
 
+    /// CHANGED T2/D1: `deadline` + `signature` are now required arguments.
+    /// When `caller` is the oracle the contract verifies an Ed25519
+    /// signature over the verdict on-chain; when `caller` is the admin
+    /// (manual fallback) both are ignored, exactly as in V8. See
+    /// `claim::submit_claim` for the full auth-model rationale.
     #[allow(clippy::too_many_arguments)]
     pub fn submit_claim(
         env: Env,
@@ -124,8 +163,46 @@ impl ProtectionPool {
         entitlement: i128,
         tier: u32,
         hack_timestamp: u64,
+        deadline: u64,
+        signature: BytesN<64>,
     ) -> Result<BytesN<32>, PoolError> {
-        claim::submit_claim(&env, &caller, &wallet, &tx_hash, entitlement, tier, hack_timestamp)
+        claim::submit_claim(
+            &env,
+            &caller,
+            &wallet,
+            &tx_hash,
+            entitlement,
+            tier,
+            hack_timestamp,
+            deadline,
+            &signature,
+        )
+    }
+
+    /// T2/D1 — admin-only. Cancels a signed-but-not-yet-submitted oracle
+    /// approval. Takes the full approval parameters rather than a
+    /// precomputed hash (V8's shape); see `claim::revoke_approval` for why.
+    #[allow(clippy::too_many_arguments)]
+    pub fn revoke_approval(
+        env: Env,
+        caller: Address,
+        wallet: Address,
+        tx_hash: BytesN<32>,
+        entitlement: i128,
+        tier: u32,
+        hack_timestamp: u64,
+        deadline: u64,
+    ) -> Result<(), PoolError> {
+        claim::revoke_approval(
+            &env,
+            &caller,
+            &wallet,
+            &tx_hash,
+            entitlement,
+            tier,
+            hack_timestamp,
+            deadline,
+        )
     }
 
     pub fn unlock_pending_claim(env: Env, claim_id: BytesN<32>) -> Result<(), PoolError> {

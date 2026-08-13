@@ -44,8 +44,7 @@ fn tier_caps_apply_correct_ratios() {
     }
 
     let (staker_a, _b) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker_a,
         &tx_hash(&env, 1),
         &(MID_STAKE * 15), // exactly tier A cap
@@ -54,8 +53,7 @@ fn tier_caps_apply_correct_ratios() {
     );
 
     let (staker_b, _b) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.admin,
+    submit_claim_signed(&env, &s, &s.admin,
         &staker_b,
         &tx_hash(&env, 2),
         &(MID_STAKE * 10), // exactly tier B cap
@@ -64,8 +62,7 @@ fn tier_caps_apply_correct_ratios() {
     );
 
     let (staker_c, _b) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.admin,
+    submit_claim_signed(&env, &s, &s.admin,
         &staker_c,
         &tx_hash(&env, 3),
         &(MID_STAKE * 5), // exactly tier C cap
@@ -79,8 +76,7 @@ fn tier_a_one_stroop_over_cap_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _b) = staked_wallet(&env, &s);
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &(MID_STAKE * 15 + 1),
@@ -103,8 +99,7 @@ fn total_allocated_never_exceeds_total_staked_across_multiple_claims() {
     // separate mechanic from what this test is checking.
     for i in 0..3u8 {
         let (staker, _b) = staked_wallet(&env, &s);
-        s.client.submit_claim(
-            &s.admin,
+        submit_claim_signed(&env, &s, &s.admin,
             &staker,
             &tx_hash(&env, i),
             &1_000_000,
@@ -122,16 +117,14 @@ fn cancelling_one_claim_does_not_affect_another_stakers_solvency() {
     let (staker1, _b1) = staked_wallet(&env, &s);
     let (staker2, _b2) = staked_wallet(&env, &s);
 
-    let claim1 = s.client.submit_claim(
-        &s.oracle,
+    let claim1 = submit_claim_signed(&env, &s, &s.oracle,
         &staker1,
         &tx_hash(&env, 1),
         &1_000_000,
         &TIER_C,
         &now_ts(&env),
     );
-    s.client.submit_claim(
-        &s.admin, // avoid the oracle's per-day claim-count limit
+    submit_claim_signed(&env, &s, &s.admin, // avoid the oracle's per-day claim-count limit
         &staker2,
         &tx_hash(&env, 2),
         &2_000_000,
@@ -216,8 +209,7 @@ fn forfeited_stake_still_banks_points_earned_before_the_claim() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90); // gate met — activates immediately on submit
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &1_000_000,

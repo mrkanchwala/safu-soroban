@@ -77,4 +77,34 @@ pub enum PoolError {
     NoStakeAmountForOverride = 70,
     NoPendingOverride = 71,
     CallerNotAdmin = 72,
+
+    // -- claim.rs / D1 on-chain Ed25519 oracle verification (73-79) --
+    //
+    // APPENDED at 73, never renumbered into 1-72. Error codes are public
+    // ABI (skills.stellar.org/skills/smart-contracts/development.md) — a
+    // client already matching on `Insolvent = 49` must keep matching on it
+    // across this upgrade.
+    //
+    // Deliberate gap, documented rather than hidden: there is NO error code
+    // for "signature did not verify." `env.crypto().ed25519_verify` returns
+    // `()` and traps on mismatch (soroban-sdk 27.0.0 `crypto.rs:152`); there
+    // is no `try_` variant and a host trap cannot be recovered in-guest. The
+    // four codes below exist precisely so every *recoverable* failure
+    // reports as a typed error and only a genuine cryptographic mismatch
+    // reaches the opaque trap — see `verify_oracle_signature` in claim.rs
+    // for the ordering that guarantees this, and note the trap lands before
+    // any storage write, so a rejected signature is state-safe.
+    /// `deadline` had already passed at submission time.
+    SignatureExpired = 73,
+    /// Oracle attestation pubkey absent from instance storage. The oracle
+    /// claim path is fail-closed until admin sets it; the admin path is
+    /// unaffected.
+    OraclePubKeyNotSet = 74,
+    /// This exact approval payload was revoked by admin before submission.
+    ApprovalRevoked = 75,
+    /// `deadline` is further out than `MAX_APPROVAL_WINDOW_SECONDS`. Bounds
+    /// how long one signed approval can stay live, and is what makes the
+    /// revocation TTL provably outlive every legal deadline — see the
+    /// const-assert in types.rs.
+    SignatureDeadlineTooFar = 76,
 }

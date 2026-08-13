@@ -191,8 +191,7 @@ fn withdraw_blocked_while_claim_active() {
     let env = new_env();
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &1_000_000,
@@ -261,8 +260,7 @@ fn emergency_exit_blocked_while_claim_active() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &1_000_000,

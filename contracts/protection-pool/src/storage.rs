@@ -29,6 +29,19 @@ pub enum DataKey {
     // -- instance (pool-wide globals) --
     Admin,
     Oracle,
+    /// D1 (T2): the oracle's Ed25519 ATTESTATION identity, stored ALONGSIDE
+    /// `Oracle` (the policy identity) — deliberately not a replacement.
+    ///
+    /// The two are not interchangeable and each is load-bearing somewhere
+    /// the other cannot serve. `Oracle: Address` is read by the oracle-only
+    /// daily claim rate limit (claim.rs), `stake.rs`'s `BeneficiaryIsOracle`
+    /// guard, and admin's `OracleEqualsCoSigner`/`CoSignerEqualsOracle`
+    /// invariants — a `BytesN<32>` cannot be compared against a beneficiary
+    /// `Address`, and a contract-type oracle address has no ed25519 pubkey
+    /// at all. `OraclePubKey` is what `ed25519_verify` needs and an Address
+    /// cannot supply. Swapping one for the other breaks working code for
+    /// zero benefit; the cost of keeping both is a few bytes.
+    OraclePubKey,
     CoSigner,
     XlmToken,
     /// Configurable pool cap (V8: `maxPoolSize`) — admin-adjustable up to
@@ -62,6 +75,14 @@ pub enum DataKey {
     /// Banked points after stake exit — accumulates across all cycles. V8:
     /// pointsBalance. Missing from the first two build passes.
     PointsBalance(Address),
+    // -- temporary (self-expiring) --
+    /// D1 (T2): keyed by the sha256 of the approval payload — the direct
+    /// analogue of V8's `revokedApprovals[keccak256(inner)]`. Lives in
+    /// `temporary()` rather than `persistent()`: a revocation is only
+    /// meaningful until the approval's own `deadline` passes, after which
+    /// `SignatureExpired` rejects that approval regardless. See
+    /// `types::REVOCATION_TTL_LEDGERS` for why expiry here is safe.
+    RevokedApproval(BytesN<32>),
 }
 
 // -----------------------------------------------------------------------
@@ -82,6 +103,20 @@ pub fn get_oracle(env: &Env) -> Address {
 
 pub fn set_oracle(env: &Env, oracle: &Address) {
     env.storage().instance().set(&DataKey::Oracle, oracle);
+}
+
+/// `Option`, not `unwrap()` — unlike every other instance getter above.
+/// Deliberate: the oracle claim path must be able to report a missing
+/// attestation key as the typed `OraclePubKeyNotSet` rather than trapping
+/// on an unwrap, which would be indistinguishable from a failed signature.
+pub fn get_oracle_pubkey(env: &Env) -> Option<BytesN<32>> {
+    env.storage().instance().get(&DataKey::OraclePubKey)
+}
+
+pub fn set_oracle_pubkey(env: &Env, pubkey: &BytesN<32>) {
+    env.storage()
+        .instance()
+        .set(&DataKey::OraclePubKey, pubkey);
 }
 
 pub fn get_co_signer(env: &Env) -> Address {
@@ -315,4 +350,30 @@ pub fn set_points_balance(env: &Env, wallet: &Address, value: i128) {
     env.storage()
         .persistent()
         .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TO);
+}
+
+// -----------------------------------------------------------------------
+// Revoked oracle approvals (temporary) — D1 (T2)
+// -----------------------------------------------------------------------
+
+/// Presence IS the revocation — the stored value is irrelevant, so this
+/// checks `has()` rather than reading a bool. An expired entry reads as
+/// "not revoked", which is correct and safe: expiry can only happen after
+/// `REVOCATION_TTL_LEDGERS`, which the const-assert in types.rs proves
+/// outlives any legal approval `deadline`, so by then the approval is
+/// already dead on `SignatureExpired`.
+pub fn is_approval_revoked(env: &Env, approval_hash: &BytesN<32>) -> bool {
+    env.storage()
+        .temporary()
+        .has(&DataKey::RevokedApproval(approval_hash.clone()))
+}
+
+pub fn set_approval_revoked(env: &Env, approval_hash: &BytesN<32>) {
+    let key = DataKey::RevokedApproval(approval_hash.clone());
+    env.storage().temporary().set(&key, &true);
+    env.storage().temporary().extend_ttl(
+        &key,
+        crate::types::REVOCATION_TTL_LEDGERS,
+        crate::types::REVOCATION_TTL_LEDGERS,
+    );
 }

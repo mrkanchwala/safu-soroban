@@ -40,7 +40,7 @@
 //! tier check they own is externally reachable from submit_claim/
 //! approve_override/execute_override's caller-supplied `tier` argument.
 
-use soroban_sdk::{contractevent, Address, Bytes, BytesN, Env};
+use soroban_sdk::{contractevent, Address, Bytes, BytesN, Env, Symbol};
 use soroban_sdk::token::TokenClient;
 use soroban_sdk::xdr::ToXdr;
 
@@ -49,10 +49,19 @@ use crate::stake;
 use crate::storage;
 use crate::types::{
     Claim, ClaimStatus, OverrideRequest, StakeRecord, APPROVE_WINDOW_LEDGERS, BPS_DENOMINATOR,
-    CLAIM_WINDOW_SECONDS, COLLECTION_INACTIVITY_LEDGERS, COOLDOWN_LEDGERS, PENALTY_LOCK_LEDGERS,
-    TIER_A_RATIO, TIER_B_RATIO, TIER_C_RATIO, TIER_BPS_DENOMINATOR, TIER_COVERAGE_BPS,
-    TIME_GATE_LEDGERS, VESTING_LEDGERS,
+    CLAIM_WINDOW_SECONDS, COLLECTION_INACTIVITY_LEDGERS, COOLDOWN_LEDGERS,
+    MAX_APPROVAL_WINDOW_SECONDS, PENALTY_LOCK_LEDGERS, TIER_A_RATIO, TIER_B_RATIO, TIER_C_RATIO,
+    TIER_BPS_DENOMINATOR, TIER_COVERAGE_BPS, TIME_GATE_LEDGERS, VESTING_LEDGERS,
 };
+
+/// Domain separator for the oracle approval payload — deliberately NOT
+/// V8's `"SAFU_CLAIM_APPROVAL"`. The two chains use different curves
+/// (secp256k1 vs Ed25519) and different key material, so cross-verification
+/// is already impossible, but a distinct domain makes that a property of
+/// the message rather than an accident of the crypto: a payload built for
+/// one chain cannot even be *constructed* as a valid payload for the other.
+/// 27 chars, within Soroban's 32-char `Symbol` limit.
+const APPROVAL_DOMAIN: &str = "SAFU_CLAIM_APPROVAL_SOROBAN";
 
 // -----------------------------------------------------------------------
 // Events — #[contractevent] pattern, see stake.rs for the same note.
@@ -119,6 +128,16 @@ pub struct OverrideExecuted {
 pub struct OverrideCancelled {
     #[topic]
     pub claim_id: BytesN<32>,
+}
+
+/// NEW T2/D1 — mirrors V8's `ApprovalRevoked(approvalHash)` event (`:839`),
+/// with `wallet` added as a topic so an operator can filter revocations by
+/// the wallet they affect (V8's hash-only event is not filterable that way).
+#[contractevent]
+pub struct ApprovalRevoked {
+    #[topic]
+    pub wallet: Address,
+    pub approval_hash: BytesN<32>,
 }
 
 // -----------------------------------------------------------------------
@@ -191,6 +210,130 @@ fn compute_claim_id(env: &Env, wallet: &Address, tx_hash: &BytesN<32>) -> BytesN
 }
 
 // -----------------------------------------------------------------------
+// D1 (T2) — oracle approval payload + Ed25519 verification.
+//
+// Ported from `SAFUPoolV8.sol:412-424`, which is an audited, live-on-mainnet
+// payload. This is a port, not a fresh design; the deviations below are
+// forced by chain differences, not preference.
+// -----------------------------------------------------------------------
+
+/// Builds the exact byte string the oracle signs.
+///
+/// **Encoding — XDR per component, NOT packed concatenation.** V8 uses
+/// `abi.encodePacked` (`:415-420`), which is a known EVM footgun: adjacent
+/// variable-length fields are concatenated with no delimiter, so distinct
+/// field tuples can serialise to identical bytes. Every component here is
+/// individually XDR-serialised into a self-delimiting `ScVal` first, which
+/// removes that class of ambiguity entirely while staying trivially
+/// reproducible off-chain (`api/signer.py` concatenates the equivalent
+/// `stellar_sdk.scval.to_*(...).to_xdr_bytes()` calls in this same order).
+///
+/// A single `#[contracttype]` struct serialised in one shot would also be
+/// unambiguous, but it encodes as an `ScMap` whose key ordering the off-chain
+/// signer would have to reproduce exactly — more cross-language risk for no
+/// extra safety, since per-component XDR is already collision-free.
+///
+/// **Field order mirrors V8 exactly**, with two substitutions:
+/// - `address(this)` -> `env.current_contract_address()`
+/// - `block.chainid` -> `env.ledger().network_id()`. Read live from the
+///   host, never a value baked in at `initialize` (the original task plan
+///   assumed no Soroban equivalent existed — it does, `ledger.rs:102`).
+///   Reading it live means no deployer-supplied trust and no migration if a
+///   stored value were ever set wrong.
+pub fn build_approval_payload(
+    env: &Env,
+    wallet: &Address,
+    tx_hash: &BytesN<32>,
+    entitlement: i128,
+    tier: u32,
+    hack_timestamp: u64,
+    deadline: u64,
+) -> Bytes {
+    let mut buf: Bytes = Symbol::new(env, APPROVAL_DOMAIN).to_xdr(env);
+    buf.append(&env.current_contract_address().to_xdr(env));
+    buf.append(&env.ledger().network_id().to_xdr(env));
+    buf.append(&wallet.to_xdr(env));
+    buf.append(&tx_hash.clone().to_xdr(env));
+    buf.append(&entitlement.to_xdr(env));
+    buf.append(&tier.to_xdr(env));
+    buf.append(&hack_timestamp.to_xdr(env));
+    buf.append(&deadline.to_xdr(env));
+    buf
+}
+
+/// Revocation key — sha256 of the payload. Direct analogue of V8's
+/// `revokedApprovals[keccak256(abi.encodePacked(inner))]` (`:423`), using
+/// the Soroban-native hash for the same reason `compute_claim_id` and the
+/// beneficiary hash already do.
+fn approval_hash(env: &Env, payload: &Bytes) -> BytesN<32> {
+    env.crypto().sha256(payload).to_bytes()
+}
+
+/// Verifies an oracle-signed approval.
+///
+/// **The check ORDER is the security property here, not an implementation
+/// detail — do not reorder.** `env.crypto().ed25519_verify` returns `()`
+/// and panics on failure (soroban-sdk 27.0.0, `crypto.rs:152`); there is no
+/// `try_` variant and a host trap cannot be caught in-guest. Every
+/// recoverable condition is therefore checked and returned as a typed
+/// `PoolError` BEFORE the verify call, so the only way to reach the opaque
+/// trap is a genuine cryptographic mismatch.
+///
+/// The trap is state-safe: per the Stellar development guidance, "an Err
+/// return or panic rolls back all state changes of the invocation,
+/// including nested calls' writes", and this function is called before
+/// `submit_claim` writes anything. The residual cost is diagnostic only — a
+/// bad signature surfaces as a generic host error rather than a named one.
+/// Accepted and documented (eng review Blocker 3); unavoidable at SDK 27.
+#[allow(clippy::too_many_arguments)]
+fn verify_oracle_signature(
+    env: &Env,
+    wallet: &Address,
+    tx_hash: &BytesN<32>,
+    entitlement: i128,
+    tier: u32,
+    hack_timestamp: u64,
+    deadline: u64,
+    signature: &BytesN<64>,
+) -> Result<(), PoolError> {
+    let now_ts = env.ledger().timestamp();
+
+    // 1. Deadline still open. V8 `:414`.
+    if now_ts > deadline {
+        return Err(PoolError::SignatureExpired);
+    }
+    // 2. Deadline within the bounded window. No V8 equivalent — V8's
+    //    revocation mapping is permanent, so it never needed a deadline
+    //    bound. Ours lives in temporary storage, and bounding the deadline
+    //    is what makes the revocation TTL provably outlive it (types.rs).
+    if deadline > now_ts + MAX_APPROVAL_WINDOW_SECONDS {
+        return Err(PoolError::SignatureDeadlineTooFar);
+    }
+    // 3. Attestation key configured. Fail-closed and typed, rather than
+    //    unwrapping into a trap indistinguishable from a bad signature.
+    let pubkey = storage::get_oracle_pubkey(env).ok_or(PoolError::OraclePubKeyNotSet)?;
+
+    let payload = build_approval_payload(
+        env,
+        wallet,
+        tx_hash,
+        entitlement,
+        tier,
+        hack_timestamp,
+        deadline,
+    );
+
+    // 4. Not revoked. V8 `:423`.
+    if storage::is_approval_revoked(env, &approval_hash(env, &payload)) {
+        return Err(PoolError::ApprovalRevoked);
+    }
+
+    // 5. Only a real cryptographic mismatch can trap past this point.
+    env.crypto().ed25519_verify(&pubkey, &payload, signature);
+    Ok(())
+}
+
+// -----------------------------------------------------------------------
 // Activation — shared by `approve_claim` (staker-gated, Rule A) and the
 // override flow (admin+coSigner, bypasses Rule A entirely — two humans
 // already made the decision, no separate staker approval needed). Forfeits
@@ -258,6 +401,38 @@ fn activate_claim(env: &Env, stake_record: &mut StakeRecord, claim: &mut Claim) 
 /// backend service calling directly once its off-chain scanner finishes,
 /// or the admin acting as a manual fallback — not a relayer forwarding a
 /// third party's signed blob). Validation order matches KB §1b exactly.
+///
+/// CHANGED for T2/D1: takes `deadline` + `signature`, and when the caller
+/// IS the oracle the contract now verifies an Ed25519 signature over the
+/// verdict on-chain. This is V8's belt-and-braces model ported exactly
+/// (`SAFUPoolV8.sol:407` caller check AND `:413` signature check), not
+/// either/or:
+///
+/// - `caller.require_auth()` is KEPT. Stellar's docs are explicit that
+///   "replay protection is implemented in the host, so there is normally no
+///   need for a contract to manage its own nonces" — that protection
+///   attaches to the authorization entry, and a detached signed payload
+///   does NOT inherit it. Dropping host auth would mean hand-rolling replay
+///   protection with a double-payout as the failure mode.
+/// - The signature is what makes the verdict *attributable* to the oracle's
+///   offline key rather than merely to whoever currently holds the oracle
+///   Address's signing rights.
+///
+/// Accepted cost, stated plainly: because host auth is retained, the oracle
+/// must submit its own claims — no relayer or third-party submission. Not
+/// currently used, so nothing is lost today.
+///
+/// The admin fallback path is untouched and requires no signature, exactly
+/// as in V8 (`:413` is gated on `msg.sender == oracle`). `deadline` and
+/// `signature` are ignored on that path.
+///
+/// Replay: already a no-op independently of the signature layer.
+/// `compute_claim_id(wallet, tx_hash)` + the `ClaimAlreadyExists` guard
+/// below mean the same wallet+tx can never be claimed twice — the claim-id
+/// IS the nonce. `deadline` and the revocation list are defence in depth,
+/// and specifically buy the ability to cancel a signed-but-not-yet-submitted
+/// approval; they are not the primary replay control.
+#[allow(clippy::too_many_arguments)]
 pub fn submit_claim(
     env: &Env,
     caller: &Address,
@@ -266,6 +441,8 @@ pub fn submit_claim(
     entitlement: i128,
     tier: u32,
     hack_timestamp: u64,
+    deadline: u64,
+    signature: &BytesN<64>,
 ) -> Result<BytesN<32>, PoolError> {
     storage::require_not_paused(env);
 
@@ -280,6 +457,23 @@ pub fn submit_claim(
         return Err(PoolError::EntitlementNotPositive);
     }
     tier_ratio(tier)?; // errors on invalid tier
+
+    // Oracle path only — matches V8's `if (msg.sender == oracle)` at `:413`,
+    // and sits at the same point in the validation order: after the caller
+    // and basic param checks, before any stake lookup, and well before any
+    // storage write.
+    if caller == &oracle {
+        verify_oracle_signature(
+            env,
+            wallet,
+            tx_hash,
+            entitlement,
+            tier,
+            hack_timestamp,
+            deadline,
+            signature,
+        )?;
+    }
 
     let mut stake_record: StakeRecord =
         storage::get_stake(env, wallet).ok_or(PoolError::NoStake)?;
@@ -981,6 +1175,77 @@ pub fn cancel_pending_override(
 
     OverrideCancelled {
         claim_id: claim_id.clone(),
+    }
+    .publish(env);
+    Ok(())
+}
+
+// -----------------------------------------------------------------------
+// revoke_approval — D1 (T2). Admin-only. Ported from V8's
+// `revokeApproval(bytes32 approvalHash) external onlyOwner` (`:837`).
+// -----------------------------------------------------------------------
+
+/// Cancels a signed-but-not-yet-submitted oracle approval.
+///
+/// **Deliberate shape deviation from V8, and the reason for it.** V8 takes
+/// the already-computed `approvalHash` directly. This takes the full
+/// approval parameters and recomputes the hash on-chain instead. Two
+/// reasons, both specific to Soroban rather than preference:
+///
+/// 1. The revocation lives in `temporary()` storage and needs a TTL that
+///    outlives the approval's `deadline`. Taking the parameters means the
+///    contract *knows* that deadline and can enforce the relationship,
+///    rather than trusting an admin-supplied number alongside an opaque
+///    hash. A typo in a separately-passed deadline would set a TTL that
+///    fails to cover the real one and silently un-revoke the approval.
+/// 2. Recomputing makes it impossible to revoke a garbage hash that
+///    corresponds to no real approval — a mistyped hash on V8 writes a
+///    permanent no-op entry with no feedback.
+///
+/// The window checks mirror `verify_oracle_signature` exactly: revoking an
+/// already-expired approval is rejected rather than silently accepted,
+/// because such an approval is already dead on `SignatureExpired` and a
+/// successful-looking revocation would imply protection it is not providing.
+#[allow(clippy::too_many_arguments)]
+pub fn revoke_approval(
+    env: &Env,
+    caller: &Address,
+    wallet: &Address,
+    tx_hash: &BytesN<32>,
+    entitlement: i128,
+    tier: u32,
+    hack_timestamp: u64,
+    deadline: u64,
+) -> Result<(), PoolError> {
+    let admin = storage::get_admin(env);
+    if caller != &admin {
+        return Err(PoolError::CallerNotAdmin);
+    }
+    admin.require_auth();
+
+    let now_ts = env.ledger().timestamp();
+    if now_ts > deadline {
+        return Err(PoolError::SignatureExpired);
+    }
+    if deadline > now_ts + MAX_APPROVAL_WINDOW_SECONDS {
+        return Err(PoolError::SignatureDeadlineTooFar);
+    }
+
+    let payload = build_approval_payload(
+        env,
+        wallet,
+        tx_hash,
+        entitlement,
+        tier,
+        hack_timestamp,
+        deadline,
+    );
+    let hash = approval_hash(env, &payload);
+    storage::set_approval_revoked(env, &hash);
+
+    ApprovalRevoked {
+        wallet: wallet.clone(),
+        approval_hash: hash,
     }
     .publish(env);
     Ok(())

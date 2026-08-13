@@ -23,7 +23,7 @@ fn initialize_twice_panics() {
     let s = setup(&env);
     let result = s
         .client
-        .try_initialize(&s.admin, &s.oracle, &s.co_signer, &s.token_id, &POOL_CAP);
+        .try_initialize(&s.admin, &s.oracle, &verifying_key_bytes(&env, &oracle_signing_key()), &s.co_signer, &s.token_id, &POOL_CAP);
     assert_eq!(result, Err(Ok(PoolError::AlreadyInitialized)));
 }
 
@@ -36,7 +36,7 @@ fn initialize_oracle_equals_cosigner_panics() {
     let token_id = sac.address();
     let contract_id = env.register(crate::ProtectionPool, ());
     let client = crate::ProtectionPoolClient::new(&env, &contract_id);
-    let result = client.try_initialize(&admin, &same, &same, &token_id, &POOL_CAP);
+    let result = client.try_initialize(&admin, &same, &verifying_key_bytes(&env, &oracle_signing_key()), &same, &token_id, &POOL_CAP);
     assert_eq!(result, Err(Ok(PoolError::OracleEqualsCoSigner)));
 }
 
@@ -49,7 +49,7 @@ fn initialize_cosigner_equals_admin_panics() {
     let token_id = sac.address();
     let contract_id = env.register(crate::ProtectionPool, ());
     let client = crate::ProtectionPoolClient::new(&env, &contract_id);
-    let result = client.try_initialize(&admin, &oracle, &admin, &token_id, &POOL_CAP);
+    let result = client.try_initialize(&admin, &oracle, &verifying_key_bytes(&env, &oracle_signing_key()), &admin, &token_id, &POOL_CAP);
     assert_eq!(result, Err(Ok(PoolError::CoSignerEqualsAdmin)));
 }
 
@@ -63,7 +63,7 @@ fn initialize_zero_pool_cap_panics() {
     let token_id = sac.address();
     let contract_id = env.register(crate::ProtectionPool, ());
     let client = crate::ProtectionPoolClient::new(&env, &contract_id);
-    let result = client.try_initialize(&admin, &oracle, &co_signer, &token_id, &0);
+    let result = client.try_initialize(&admin, &oracle, &verifying_key_bytes(&env, &oracle_signing_key()), &co_signer, &token_id, &0);
     assert_eq!(result, Err(Ok(PoolError::PoolCapNotPositive)));
 }
 
@@ -76,8 +76,7 @@ fn set_oracle_updates() {
     // Confirmed indirectly: submit_claim as the NEW oracle now works.
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 91);
-    s.client.submit_claim(
-        &new_oracle,
+    submit_claim_signed(&env, &s, &new_oracle,
         &staker,
         &tx_hash(&env, 1),
         &1_000_000,
@@ -213,8 +212,7 @@ fn suspend_stake_blocks_claim_submission() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     s.client.suspend_stake(&staker);
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &1_000_000,
@@ -231,8 +229,7 @@ fn unsuspend_stake_restores_claim_eligibility() {
     let (staker, _ben) = staked_wallet(&env, &s);
     s.client.suspend_stake(&staker);
     s.client.unsuspend_stake(&staker, &None);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &1_000_000,
@@ -263,8 +260,7 @@ fn unsuspend_stake_resets_rule_a_deadline_for_awaiting_approval() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &1_000_000,
@@ -290,8 +286,7 @@ fn unsuspend_stake_resets_rule_b_clock_for_active_claim() {
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &1_000_000,

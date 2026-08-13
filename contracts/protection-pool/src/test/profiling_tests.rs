@@ -74,8 +74,7 @@ fn profile_submit_claim() {
     advance_days(&env, 90);
 
     env.cost_estimate().budget().reset_default();
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &1_000_000,
@@ -94,8 +93,7 @@ fn profile_claim_stream() {
     let entitlement = 4_500_000i128;
     let (staker, ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &entitlement,

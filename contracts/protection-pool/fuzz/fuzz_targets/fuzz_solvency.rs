@@ -16,7 +16,15 @@
 
 #![no_main]
 
+//! T2/D1 note: `submit_claim` now verifies an Ed25519 oracle signature.
+//! This target signs each generated claim correctly rather than fuzzing the
+//! signature bytes — a random 64-byte signature fails verification, and
+//! `ed25519_verify` reports that as a host TRAP, which libFuzzer counts as a
+//! crash. Fuzzing it would bury every real finding under signature noise.
+//! The signature path itself is covered by `src/test/d1_signature_tests.rs`.
+
 use arbitrary::Arbitrary;
+use ed25519_dalek::{Signer, SigningKey};
 use libfuzzer_sys::fuzz_target;
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::token::StellarAssetClient;
@@ -53,9 +61,19 @@ fuzz_target!(|ops: Vec<Op>| {
     let token_id = sac.address();
     let token_admin = StellarAssetClient::new(&env, &token_id);
 
+    let oracle_key = SigningKey::from_bytes(&[7u8; 32]);
+    let oracle_pubkey = BytesN::from_array(&env, &oracle_key.verifying_key().to_bytes());
+
     let contract_id = env.register(ProtectionPool, ());
     let client = ProtectionPoolClient::new(&env, &contract_id);
-    client.initialize(&admin, &oracle, &co_signer, &token_id, &POOL_CAP);
+    client.initialize(
+        &admin,
+        &oracle,
+        &oracle_pubkey,
+        &co_signer,
+        &token_id,
+        &POOL_CAP,
+    );
 
     let wallets: Vec<Address> = (0..NUM_WALLETS)
         .map(|_| {
@@ -90,6 +108,20 @@ fuzz_target!(|ops: Vec<Op>| {
                 let hash = BytesN::from_array(&env, &[seed; 32]);
                 let now = env.ledger().timestamp();
                 let tier_val = 1 + (tier % 3) as u32;
+                let deadline = now + 3_600;
+                let payload = env.as_contract(&contract_id, || {
+                    protection_pool::testutils::build_approval_payload(
+                        &env,
+                        &wallets[i],
+                        &hash,
+                        entitlement,
+                        tier_val,
+                        now,
+                        deadline,
+                    )
+                });
+                let msg: Vec<u8> = payload.iter().collect();
+                let sig = BytesN::from_array(&env, &oracle_key.sign(&msg).to_bytes());
                 if let Ok(Ok(id)) = client.try_submit_claim(
                     &oracle,
                     &wallets[i],
@@ -97,6 +129,8 @@ fuzz_target!(|ops: Vec<Op>| {
                     &entitlement,
                     &tier_val,
                     &now,
+                    &deadline,
+                    &sig,
                 ) {
                     claims.push((id, beneficiaries[i].clone()));
                 }
