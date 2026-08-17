@@ -119,7 +119,7 @@ pub fn stake(
     amount: i128,
     beneficiary: &Address,
 ) -> Result<(), PoolError> {
-    storage::require_not_paused(env);
+    storage::require_not_paused(env)?;
     staker.require_auth();
 
     if amount <= 0 {
@@ -198,7 +198,7 @@ pub fn set_beneficiary(
     staker: &Address,
     new_beneficiary: &Address,
 ) -> Result<(), PoolError> {
-    storage::require_not_paused(env);
+    storage::require_not_paused(env)?;
     staker.require_auth();
 
     if new_beneficiary == staker {
@@ -228,7 +228,7 @@ pub fn set_beneficiary(
 }
 
 pub fn withdraw(env: &Env, staker: &Address, beneficiary: &Address) -> Result<(), PoolError> {
-    storage::require_not_paused(env);
+    storage::require_not_paused(env)?;
     staker.require_auth();
 
     let mut record = storage::get_stake(env, staker).ok_or(PoolError::NoStake)?;
@@ -256,6 +256,14 @@ pub fn withdraw(env: &Env, staker: &Address, beneficiary: &Address) -> Result<()
     // returns 0 once withdrawn). Missing from the first two build passes.
     let final_points = compute_points(env, staker);
     let amount = record.amount;
+
+    // D2: before D2 this transfer could not fail on funds — `total_staked`
+    // WAS the contract's real balance. Once XLM can sit in the yield vault
+    // the two diverge, and without this check a short balance would surface
+    // as an opaque SAC host trap. Checked before any state mutation so the
+    // typed error is the only outcome; principal is never at risk, it is in
+    // the vault and admin's `provide_liquidity` makes it liquid again.
+    crate::vault::require_liquidity(env, amount)?;
 
     // Effects before interaction (CEI).
     record.withdrawn = true;
@@ -299,6 +307,15 @@ pub fn emergency_exit(env: &Env, staker: &Address) -> Result<(), PoolError> {
     }
 
     let amount = record.amount;
+
+    // D2: same reasoning as `withdraw`, but this is the path that most
+    // needs it — `emergency_exit` runs WHILE PAUSED and is the staker's
+    // escape hatch. It is precisely because this function must work during
+    // a pause that `vault::provide_liquidity` deliberately does NOT carry a
+    // `require_not_paused` guard (V8's equivalent does; porting that
+    // modifier would leave this path unfundable exactly when it matters).
+    crate::vault::require_liquidity(env, amount)?;
+
     record.withdrawn = true;
     record.amount = 0;
     storage::set_stake(env, staker, &record);

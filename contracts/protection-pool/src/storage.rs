@@ -68,6 +68,37 @@ pub enum DataKey {
     DailyEntitlementTotal,
     LastEntitlementDay,
     DailyClaimCount,
+    /// D2 (T2): DeFindex vault address. Deliberately NOT an `initialize`
+    /// argument and never accepted as a function parameter on any
+    /// user-facing path (Soroban vuln checklist #9 — an attacker-suppliable
+    /// external contract address is an arbitrary-call primitive). Unset
+    /// until admin calls `set_vault`, which is why the whole yield layer is
+    /// fail-closed on a fresh deploy.
+    Vault,
+    /// D2: destination for extracted yield. V8: `treasuryWallet`.
+    Treasury,
+    /// D2: max fraction of `total_staked` deployable, in bps. Unset reads
+    /// as 0, so nothing can be deployed until admin opts in.
+    DeployBps,
+    /// D2: vault shares (dfTokens) this contract holds. V8: `totalDeployed`
+    /// (wstETH units). Tracked locally rather than read from
+    /// `vault.balance()` at decision time so the accounting stays a pure
+    /// internal number — see `TotalDeployedXlm` for why that matters.
+    TotalDeployedShares,
+    /// D2: XLM deployed, valued at ORIGINAL DEPOSIT VALUE, never marked to
+    /// market. V8: `totalDeployedETH`, "ETH equivalent deployed to Lido
+    /// (original stake amounts)" (`SAFUPoolV8.sol:137`).
+    ///
+    /// This convention is what keeps replays deterministic. The vault's
+    /// share price is an externally mutable value that drifts between
+    /// transactions; marking to market would drag it into the solvency
+    /// invariant and reintroduce exactly the hazard the scanner's
+    /// reputation-feed pinning rule exists to prevent. Held at original
+    /// value, this stays a pure accounting figure and no externally
+    /// mutable value feeds any payout decision at all.
+    TotalDeployedXlm,
+    /// D2: running sum of XLM sent to treasury. V8: `totalExtractedYield`.
+    TotalExtractedYield,
     // -- persistent (per-entity) --
     Stake(Address),
     ClaimRec(BytesN<32>),
@@ -127,9 +158,11 @@ pub fn set_co_signer(env: &Env, co_signer: &Address) {
     env.storage().instance().set(&DataKey::CoSigner, co_signer);
 }
 
-/// Network-specific XLM SAC address, set once at `initialize`. TODO: the
-/// actual contract address differs between testnet/mainnet — pass in as
-/// an `initialize` argument, never hardcode.
+/// Network-specific XLM SAC address, set once at `initialize`. The address
+/// differs between testnet and mainnet, so it is a plain `initialize`
+/// argument (`admin.rs`) and is never hardcoded in contract logic.
+/// (Stale TODO removed 2026-08-17, 7a audit Finding 7 — it described work
+/// that was already done.)
 pub fn get_xlm_token(env: &Env) -> Address {
     env.storage().instance().get(&DataKey::XlmToken).unwrap()
 }
@@ -189,10 +222,17 @@ pub fn set_paused(env: &Env, value: bool) {
     env.storage().instance().set(&DataKey::Paused, &value);
 }
 
-pub fn require_not_paused(env: &Env) {
+/// CONVERTED 2026-08-17 (7a audit, Finding 5): was `panic!("SAFU: paused")`,
+/// the last bare panic in production code left over from the 2026-07-31
+/// typed-error conversion. Now returns `Err(PoolError::Paused)` so a paused
+/// pool is a matchable error code rather than an opaque host trap. Every
+/// caller already returns `Result<_, PoolError>`, so each call site just
+/// gains a `?`.
+pub fn require_not_paused(env: &Env) -> Result<(), crate::error::PoolError> {
     if is_paused(env) {
-        panic!("SAFU: paused");
+        return Err(crate::error::PoolError::Paused);
     }
+    Ok(())
 }
 
 /// Returns (daily_outflow, last_outflow_day), rolling over to (0, today)
@@ -261,6 +301,79 @@ pub fn set_daily_entitlement(env: &Env, current_day: u32, total: i128, count: u3
     env.storage()
         .instance()
         .set(&DataKey::DailyClaimCount, &count);
+}
+
+// -----------------------------------------------------------------------
+// D2 — yield deployment globals (instance)
+// -----------------------------------------------------------------------
+
+/// `Option`, not `unwrap()` — the yield layer must report an unconfigured
+/// vault as the typed `VaultNotSet` rather than trapping on an unwrap.
+pub fn get_vault(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::Vault)
+}
+
+pub fn set_vault(env: &Env, vault: &Address) {
+    env.storage().instance().set(&DataKey::Vault, vault);
+}
+
+pub fn get_treasury(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::Treasury)
+}
+
+pub fn set_treasury(env: &Env, treasury: &Address) {
+    env.storage().instance().set(&DataKey::Treasury, treasury);
+}
+
+/// Defaults to 0 — nothing is deployable until an admin opts in.
+pub fn get_deploy_bps(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::DeployBps)
+        .unwrap_or(0)
+}
+
+pub fn set_deploy_bps(env: &Env, value: i128) {
+    env.storage().instance().set(&DataKey::DeployBps, &value);
+}
+
+pub fn get_total_deployed_shares(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TotalDeployedShares)
+        .unwrap_or(0)
+}
+
+pub fn set_total_deployed_shares(env: &Env, value: i128) {
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalDeployedShares, &value);
+}
+
+pub fn get_total_deployed_xlm(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TotalDeployedXlm)
+        .unwrap_or(0)
+}
+
+pub fn set_total_deployed_xlm(env: &Env, value: i128) {
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalDeployedXlm, &value);
+}
+
+pub fn get_total_extracted_yield(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TotalExtractedYield)
+        .unwrap_or(0)
+}
+
+pub fn set_total_extracted_yield(env: &Env, value: i128) {
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalExtractedYield, &value);
 }
 
 /// Bump the shared instance TTL — call at every entry point that touches

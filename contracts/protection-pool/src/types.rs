@@ -1,8 +1,19 @@
-//! Data model ported from `SAFUPoolV8.sol`, pool/claims mechanics only.
-//! Yield-deployment fields (wstETH/Lido: `wstethDeployed`, `totalDeployed`,
-//! `totalDeployedETH`) are deliberately excluded — Tranche 1 scope is the
-//! core pool only, no yield venue. See context/knowledge/smartcontract-soroban.md
+//! Data model ported from `SAFUPoolV8.sol`.
+//!
+//! Tranche 1 covered pool/claims mechanics only, excluding V8's per-staker
+//! yield-deployment fields (`wstethDeployed`, `totalDeployed`,
+//! `totalDeployedETH`) — see context/knowledge/smartcontract-soroban.md
 //! "scope boundary" note (research-ops repo) for why.
+//!
+//! Doc corrected 2026-08-17 (7a audit, Finding 6): this header still claimed
+//! "no yield venue" after D2 landed. Tranche 2 DOES add yield, and its
+//! constants live in this file (`MAX_DEPLOY_BPS`, `DEPLOY_BPS_DENOMINATOR`,
+//! see the D2 block below). What remains true is that V8's *per-staker*
+//! deployment tranche is still deliberately absent — this contract holds one
+//! pooled position and bounds deployment by admin policy instead, which is
+//! why V8's inline 100%-deploy could not be ported. D1's oracle-signature
+//! constants (`MAX_APPROVAL_WINDOW_SECONDS`, `REVOCATION_TTL_LEDGERS`) are
+//! also defined here.
 
 use soroban_sdk::{contracttype, Address, BytesN};
 
@@ -106,6 +117,48 @@ pub const APPROVE_WINDOW_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
 /// — the 7-day mandatory cooldown must never count as staker inactivity
 /// (eng review blocker #2).
 pub const COLLECTION_INACTIVITY_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
+
+// -----------------------------------------------------------------------
+// D2 (Tranche 2) — DeFindex vault yield deployment.
+//
+// V8 deploys 100% of every stake into Lido inline inside `stakeETH`
+// (`SAFUPoolV8.sol:295-303`) and holds no standing buffer, relying on the
+// owner to call `provideClaimLiquidity` during the 7-day claim cooldown.
+// That is safe on V8 ONLY because V8 tracks deployment per staker
+// (`StakeRecord.wstethDeployed`) and unwinds that exact tranche inline
+// inside `withdraw()` (`:330-346`), so a withdrawal always has precisely
+// its own principal available.
+//
+// This contract has no per-staker deployment tranche, and — decisively —
+// neither of its two withdrawal paths has any cooldown in which an
+// operator could react: `stake::withdraw` has no time lock at all, and
+// `stake::emergency_exit` is the pause-time escape hatch, so it must work
+// exactly when the operator is least able to intervene. Porting V8's
+// deploy policy here would therefore break principal withdrawal, not just
+// claims.
+//
+// Locked design (eng review 2026-08-14,
+// `outputs/2026-08-14_plan-eng-review-safu-t2-d2-yield-integration.md`):
+// deployment is a SEPARATE admin call, bounded by `deploy_bps`, floored so
+// it can never touch already-reserved entitlements, and NEVER auto-unwound
+// from any user-facing path. The economics make this free rather than a
+// trade-off: XLM on Blend pays ~0.05% APY, so the yield forgone by
+// holding a large liquid buffer is negligible against the liveness it buys.
+// -----------------------------------------------------------------------
+
+/// Hard ceiling on `deploy_bps`, enforced in `set_deploy_bps` — an admin
+/// cannot configure the pool into V8's 100%-deployed posture even
+/// deliberately. Operational recommendation for T2 is 5_000 (50%); this
+/// constant is the bound, not the setting.
+pub const MAX_DEPLOY_BPS: i128 = 8_000;
+
+/// `deploy_bps` and the vault address both start unset, so every yield
+/// path is fail-closed on a fresh deploy: `deploy_bps` reads 0 and
+/// `set_vault` has not run, meaning the pool behaves exactly as it did in
+/// Tranche 1 until an admin deliberately turns deployment on. This is why
+/// D2 requires NO change to `initialize`'s signature — unlike D1, which
+/// had to add `oracle_pubkey`.
+pub const DEPLOY_BPS_DENOMINATOR: i128 = 10_000;
 
 // -----------------------------------------------------------------------
 // Stake bounds — dynamic, as basis points of the configurable pool cap,

@@ -70,16 +70,21 @@ fuzz_target!(|ops: Vec<Op>| {
     let oracle_key = SigningKey::from_bytes(&[7u8; 32]);
     let oracle_pubkey = BytesN::from_array(&env, &oracle_key.verifying_key().to_bytes());
 
-    let contract_id = env.register(ProtectionPool, ());
-    let client = ProtectionPoolClient::new(&env, &contract_id);
-    client.initialize(
-        &admins[0],
-        &oracle,
-        &oracle_pubkey,
-        &co_signers[0],
-        &token_id,
-        &POOL_CAP,
+    // Configured via `__constructor` at registration (7a audit, Finding 3 —
+    // the separate `initialize` entrypoint was removed to close the
+    // deploy->init front-running window).
+    let contract_id = env.register(
+        ProtectionPool,
+        (
+            admins[0].clone(),
+            oracle.clone(),
+            oracle_pubkey.clone(),
+            co_signers[0].clone(),
+            token_id.clone(),
+            POOL_CAP,
+        ),
     );
+    let client = ProtectionPoolClient::new(&env, &contract_id);
 
     let wallets: Vec<Address> = (0..NUM_WALLETS)
         .map(|_| {

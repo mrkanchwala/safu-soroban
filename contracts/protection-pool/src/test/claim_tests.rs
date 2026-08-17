@@ -692,20 +692,27 @@ fn submit_claim_duplicate_wallet_tx_hash_after_cancel_panics() {
     assert_eq!(result, Err(Ok(PoolError::ClaimAlreadyExists)));
 }
 
+/// CHANGED 2026-08-17 (7a audit, Finding 5): was
+/// `#[should_panic(expected = "SAFU: paused")]`. `require_not_paused` now
+/// returns the typed `PoolError::Paused` rather than a bare `panic!`, so this
+/// asserts the specific error code — strictly stronger than matching a panic
+/// substring, and consistent with how every other rejection in this file is
+/// tested.
 #[test]
-#[should_panic(expected = "SAFU: paused")]
 fn submit_claim_blocked_while_paused() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     s.client.pause();
-    submit_claim_signed(&env, &s, &s.oracle,
+    let result = try_submit_claim_signed(
+        &env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::Paused)));
 }
 
 // -----------------------------------------------------------------------

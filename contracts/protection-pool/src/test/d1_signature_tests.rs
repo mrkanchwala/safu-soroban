@@ -533,6 +533,85 @@ fn rotating_the_oracle_address_leaves_the_pubkey_intact() {
 }
 
 // -----------------------------------------------------------------------
+// Atomic rotation of both identities (`set_oracle_identity`)
+//
+// The two tests above pin the INDEPENDENCE of the two setters, which is the
+// property that makes a two-step rotation drift. These two pin the atomic
+// alternative: both identities move together, or neither moves.
+// -----------------------------------------------------------------------
+
+#[test]
+fn atomic_rotation_swaps_both_identities_in_one_call() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+    let txh = tx_hash(&env, 1);
+    let hack = now_ts(&env);
+    let deadline = default_deadline(&env);
+
+    let old_sig = sign_approval(&env, &s, &staker, &txh, &ENTITLEMENT, &TIER_C, &hack, &deadline);
+
+    let new_oracle = Address::generate(&env);
+    let new_key = other_signing_key();
+    s.client
+        .set_oracle_identity(&new_oracle, &verifying_key_bytes(&env, &new_key));
+
+    // The retired key stops verifying the moment the call lands, same as a
+    // pubkey-only rotation — atomicity does not soften that hazard.
+    assert_signature_trap(submit_raw(
+        &s, &new_oracle, &staker, &txh, &ENTITLEMENT, &TIER_C, &hack, &deadline, &old_sig,
+    ));
+
+    // The point of the test: the new identity is COHERENT immediately — new
+    // Address presenting a signature from the new key. Under the two-step,
+    // this state was only reachable after both calls had landed, and the
+    // interval between them rejected every oracle claim.
+    let new_sig = sign_approval_with(
+        &env, &s, &new_key, &staker, &txh, &ENTITLEMENT, &TIER_C, &hack, &deadline,
+    );
+    assert!(submit_raw(
+        &s, &new_oracle, &staker, &txh, &ENTITLEMENT, &TIER_C, &hack, &deadline, &new_sig,
+    )
+    .is_ok());
+}
+
+#[test]
+fn rejected_atomic_rotation_leaves_both_identities_untouched() {
+    let env = new_env();
+    let s = setup(&env);
+    let (staker, _ben) = staked_wallet(&env, &s);
+
+    // co_signer is an illegal oracle. The guard has to fire BEFORE the
+    // pubkey is written — otherwise a REJECTED rotation would still have
+    // retired the attestation key, stranding the surviving oracle Address
+    // with a key it cannot sign for. That partial write is precisely what
+    // this function exists to make impossible, so it is asserted rather
+    // than left to Soroban's rollback semantics.
+    let orphan_key = other_signing_key();
+    assert_eq!(
+        s.client
+            .try_set_oracle_identity(&s.co_signer, &verifying_key_bytes(&env, &orphan_key)),
+        Err(Ok(PoolError::OracleEqualsCoSigner))
+    );
+
+    // Both original identities still work, together.
+    let claim_id = submit_claim_signed(
+        &env,
+        &s,
+        &s.oracle,
+        &staker,
+        &tx_hash(&env, 1),
+        &ENTITLEMENT,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    assert_eq!(
+        s.client.get_claim(&claim_id).unwrap().status,
+        ClaimStatus::PendingTime
+    );
+}
+
+// -----------------------------------------------------------------------
 // Revocation
 // -----------------------------------------------------------------------
 

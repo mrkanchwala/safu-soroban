@@ -6,65 +6,122 @@ use soroban_sdk::Address;
 use super::common::*;
 use crate::error::PoolError;
 
+// -----------------------------------------------------------------------
+// Constructor tests.
+//
+// REWRITTEN 2026-08-17 (7a audit, Finding 3). Configuration moved from a
+// separate `initialize` entrypoint to `__constructor`, which closes the
+// deploy->init front-running window. Consequence for testing: a failing
+// constructor **aborts the deployment**, so `env.register` panics rather
+// than returning a `Result` — there is no `try_register`, and no
+// `try_initialize` client method exists any more.
+//
+// These therefore assert on the panic, pinned to the specific contract error
+// code (`Error(Contract, #N)`) so they still fail if the WRONG validation
+// fires — the codes are `PoolError`'s public ABI discriminants:
+// OracleEqualsCoSigner = 11, CoSignerEqualsAdmin = 12, PoolCapNotPositive = 3.
+// Weaker than the previous `assert_eq!(..., Err(Ok(PoolError::X)))` in form,
+// but it exercises exactly what a real deployer hits, which the old test did
+// not. `initialize_guard_rejects_second_call` below keeps a typed assertion on
+// the reinit guard by calling the internal helper directly.
+// -----------------------------------------------------------------------
+
 #[test]
-fn initialize_sets_all_fields() {
+fn constructor_sets_all_fields() {
     let env = new_env();
     let s = setup(&env);
-    // No panic on a fresh initialize is the assertion; roundtrip a
-    // stake to confirm the pool cap actually took effect.
+    // Successful construction is the assertion (setup would have panicked);
+    // roundtrip a stake to confirm the pool cap actually took effect.
     let staker = new_funded_address(&env, &s, MID_STAKE);
     let ben = Address::generate(&env);
     s.client.stake(&staker, &MID_STAKE, &ben);
 }
 
+/// The reinit guard is unreachable through the ABI now (`__constructor` runs
+/// only at creation), so this drives `admin::initialize` directly inside the
+/// already-constructed contract's storage context. That keeps a typed-error
+/// assertion on the guard, and pins that it checks BEFORE writing anything.
 #[test]
-fn initialize_twice_panics() {
+fn initialize_guard_rejects_second_call() {
     let env = new_env();
     let s = setup(&env);
-    let result = s
-        .client
-        .try_initialize(&s.admin, &s.oracle, &verifying_key_bytes(&env, &oracle_signing_key()), &s.co_signer, &s.token_id, &POOL_CAP);
-    assert_eq!(result, Err(Ok(PoolError::AlreadyInitialized)));
+    let pubkey = verifying_key_bytes(&env, &oracle_signing_key());
+    let result = env.as_contract(&s.contract_id, || {
+        crate::admin::initialize(
+            &env,
+            &s.admin,
+            &s.oracle,
+            &pubkey,
+            &s.co_signer,
+            &s.token_id,
+            POOL_CAP,
+        )
+    });
+    assert_eq!(result, Err(PoolError::AlreadyInitialized));
 }
 
 #[test]
-fn initialize_oracle_equals_cosigner_panics() {
+#[should_panic(expected = "#11")] // PoolError::OracleEqualsCoSigner
+fn constructor_oracle_equals_cosigner_aborts_deploy() {
     let env = new_env();
     let admin = Address::generate(&env);
     let same = Address::generate(&env);
     let sac = env.register_stellar_asset_contract_v2(admin.clone());
     let token_id = sac.address();
-    let contract_id = env.register(crate::ProtectionPool, ());
-    let client = crate::ProtectionPoolClient::new(&env, &contract_id);
-    let result = client.try_initialize(&admin, &same, &verifying_key_bytes(&env, &oracle_signing_key()), &same, &token_id, &POOL_CAP);
-    assert_eq!(result, Err(Ok(PoolError::OracleEqualsCoSigner)));
+    env.register(
+        crate::ProtectionPool,
+        (
+            admin,
+            same.clone(),
+            verifying_key_bytes(&env, &oracle_signing_key()),
+            same,
+            token_id,
+            POOL_CAP,
+        ),
+    );
 }
 
 #[test]
-fn initialize_cosigner_equals_admin_panics() {
+#[should_panic(expected = "#12")] // PoolError::CoSignerEqualsAdmin
+fn constructor_cosigner_equals_admin_aborts_deploy() {
     let env = new_env();
     let admin = Address::generate(&env);
     let oracle = Address::generate(&env);
     let sac = env.register_stellar_asset_contract_v2(admin.clone());
     let token_id = sac.address();
-    let contract_id = env.register(crate::ProtectionPool, ());
-    let client = crate::ProtectionPoolClient::new(&env, &contract_id);
-    let result = client.try_initialize(&admin, &oracle, &verifying_key_bytes(&env, &oracle_signing_key()), &admin, &token_id, &POOL_CAP);
-    assert_eq!(result, Err(Ok(PoolError::CoSignerEqualsAdmin)));
+    env.register(
+        crate::ProtectionPool,
+        (
+            admin.clone(),
+            oracle,
+            verifying_key_bytes(&env, &oracle_signing_key()),
+            admin,
+            token_id,
+            POOL_CAP,
+        ),
+    );
 }
 
 #[test]
-fn initialize_zero_pool_cap_panics() {
+#[should_panic(expected = "#3")] // PoolError::PoolCapNotPositive
+fn constructor_zero_pool_cap_aborts_deploy() {
     let env = new_env();
     let admin = Address::generate(&env);
     let oracle = Address::generate(&env);
     let co_signer = Address::generate(&env);
     let sac = env.register_stellar_asset_contract_v2(admin.clone());
     let token_id = sac.address();
-    let contract_id = env.register(crate::ProtectionPool, ());
-    let client = crate::ProtectionPoolClient::new(&env, &contract_id);
-    let result = client.try_initialize(&admin, &oracle, &verifying_key_bytes(&env, &oracle_signing_key()), &co_signer, &token_id, &0);
-    assert_eq!(result, Err(Ok(PoolError::PoolCapNotPositive)));
+    env.register(
+        crate::ProtectionPool,
+        (
+            admin,
+            oracle,
+            verifying_key_bytes(&env, &oracle_signing_key()),
+            co_signer,
+            token_id,
+            0_i128,
+        ),
+    );
 }
 
 #[test]

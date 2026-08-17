@@ -6,9 +6,26 @@ only (this contract has not been deployed anywhere yet — see
 `README.md`'s "Known open items"). All numbers below are reproducible
 with the commands in each section.
 
+**Updated 2026-08-17 (Tranche 2 + 7a audit)** — this file previously described
+Tranche 1 only. T2 added D1 (on-chain Ed25519 oracle approval verification),
+D2 (DeFindex vault yield deployment, `src/vault.rs`), atomic oracle rotation,
+and the 7a audit fixes. Concretely, since the numbers below were last measured:
+- **Unit tests: 238 passing** (was 184) — §1's count is updated below
+- **Error variants: 73** (was 72) — D1 appended 73-76, D2 appended 80-92, and
+  the 7a audit appended `Paused = 93` when `require_not_paused` was converted
+  from the last surviving bare `panic!`. Codes are public ABI and are never
+  renumbered
+- **`initialize` no longer exists** — configuration moved to `__constructor`
+  (7a audit) to close the deploy→init front-running window. See README's
+  "Deploy-time arguments"
+- **Fuzzing (§3) has NOT been re-run against T2 code.** The last verified run
+  (2026-07-14: 4,270 runs, 0 crashes) predates D1/D2/7c and the constructor
+  migration. Native runs abort in libFuzzer's startup print on macOS arm64
+  (see `Dockerfile.fuzz`); re-run in that container before D4
+
 **Updated 2026-07-31** — converted the contract from `panic!("SAFU: ...")`
 string-based error handling to a typed `#[contracterror] PoolError` enum
-(`src/error.rs`, 72 variants) + `Result<T, PoolError>` on every fallible
+(`src/error.rs`, 72 variants at that time) + `Result<T, PoolError>` on every fallible
 public/internal function. Pure error-handling-mechanism refactor: same
 validation conditions, same order, same business logic, zero behavior
 change beyond the failure signal — verified by a full line-by-line diff
@@ -24,7 +41,7 @@ a full-contract review, independent of the new mechanism (see §7 for
 what they were). This update re-measured every section below against the
 new code rather than leaving the 2026-07-15 numbers in place unverified.
 
-## 1. Unit tests — 184 passing (up from 173)
+## 1. Unit tests — 238 passing (up from 184)
 
 ```bash
 cargo test --package protection-pool

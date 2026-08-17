@@ -70,17 +70,22 @@ pub fn setup_with_cap(env: &Env, pool_cap: i128) -> Setup<'_> {
     let token_id = sac.address();
     let token_admin = StellarAssetClient::new(env, &token_id);
 
-    let contract_id = env.register(ProtectionPool, ());
-    let client = ProtectionPoolClient::new(env, &contract_id);
     let oracle_key = oracle_signing_key();
-    client.initialize(
-        &admin,
-        &oracle,
-        &verifying_key_bytes(env, &oracle_key),
-        &co_signer,
-        &token_id,
-        &pool_cap,
+    // CHANGED 2026-08-17 (7a audit, Finding 3): the pool is now configured by
+    // `__constructor` at registration rather than by a separate
+    // `client.initialize(...)` call, matching how it will actually deploy.
+    let contract_id = env.register(
+        ProtectionPool,
+        (
+            admin.clone(),
+            oracle.clone(),
+            verifying_key_bytes(env, &oracle_key),
+            co_signer.clone(),
+            token_id.clone(),
+            pool_cap,
+        ),
     );
+    let client = ProtectionPoolClient::new(env, &contract_id);
 
     Setup {
         client,

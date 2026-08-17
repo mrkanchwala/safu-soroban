@@ -444,7 +444,7 @@ pub fn submit_claim(
     deadline: u64,
     signature: &BytesN<64>,
 ) -> Result<BytesN<32>, PoolError> {
-    storage::require_not_paused(env);
+    storage::require_not_paused(env)?;
 
     let admin = storage::get_admin(env);
     let oracle = storage::get_oracle(env);
@@ -597,7 +597,7 @@ pub fn submit_claim(
 // -----------------------------------------------------------------------
 
 pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
-    storage::require_not_paused(env);
+    storage::require_not_paused(env)?;
 
     let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchClaim)?;
     if claim.status != ClaimStatus::PendingTime {
@@ -637,7 +637,7 @@ pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), Pool
 // -----------------------------------------------------------------------
 
 pub fn approve_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
-    storage::require_not_paused(env);
+    storage::require_not_paused(env)?;
 
     let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchClaim)?;
     claim.wallet.require_auth();
@@ -787,7 +787,7 @@ pub fn claim_stream(
     claim_id: &BytesN<32>,
     beneficiary: &Address,
 ) -> Result<i128, PoolError> {
-    storage::require_not_paused(env);
+    storage::require_not_paused(env)?;
 
     let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchClaim)?;
     claim.wallet.require_auth();
@@ -839,6 +839,16 @@ pub fn claim_stream(
     if transfer_amount <= 0 {
         return Err(PoolError::DailyOutflowCapReached);
     }
+
+    // D2: the solvency gate (`submit_claim`) and the outflow cap above both
+    // reason over `total_staked` / `total_allocated` — accounting figures
+    // that stay correct while XLM sits in the yield vault, which is exactly
+    // why D2 required no change to either. The question they cannot answer
+    // is whether the contract physically holds the XLM right now. That is a
+    // liquidity question, not a solvency one, and it gets its own check
+    // here so a short balance reports as a typed error a staker can act on
+    // rather than an opaque trap. Checked before any state mutation.
+    crate::vault::require_liquidity(env, transfer_amount)?;
 
     claim.streamed += transfer_amount;
     // Rule B: any successful collection resets the inactivity clock.
@@ -949,7 +959,7 @@ pub fn approve_override(
     entitlement: i128,
     tier: u32,
 ) -> Result<(), PoolError> {
-    storage::require_not_paused(env);
+    storage::require_not_paused(env)?;
 
     let admin = storage::get_admin(env);
     let co_signer = storage::get_co_signer(env);
