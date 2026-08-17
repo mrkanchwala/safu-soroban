@@ -1,0 +1,72 @@
+# cargo-deny configuration — SAFU ProtectionPool (Soroban)
+#
+# Added 2026-08-17 (post-7a audit remediation). Before this there was no
+# committed config, so `cargo deny check` reported `advisories FAILED,
+# licenses FAILED` on every run — not because anything was wrong, but because
+# the default policy allows no licenses at all. A gate that always fails is a
+# gate nobody reads, which is why this is committed rather than passed as
+# ad-hoc CLI flags.
+#
+# The allowlists below were DERIVED from the actual dependency tree
+# (`cargo deny list`), not copied from a template. Re-derive them the same way
+# if a dependency is added; do not widen a list to make an error disappear.
+
+[advisories]
+version = 2
+yanked = "deny"
+
+ignore = [
+    # RUSTSEC-2024-0436 — `paste` is no longer maintained.
+    #
+    # Accepted, not actionable, and deliberately not a blocker:
+    #   * `paste` is a PROC-MACRO. It runs at compile time only and emits no
+    #     runtime code, so it is absent from the shipped WASM entirely.
+    #   * It arrives five levels deep under `soroban-sdk` — we do not depend on
+    #     it directly and cannot drop it without dropping the SDK.
+    #   * "Unmaintained" is a maintenance-status advisory, not a vulnerability.
+    #     There is no known exploit and no patched version to move to.
+    #
+    # Revisit when soroban-sdk drops the dependency. Do NOT extend this
+    # rationale to a runtime crate or to an advisory with an actual CVE.
+    "RUSTSEC-2024-0436",
+]
+
+[licenses]
+version = 2
+
+# Every license present in the tree as of 2026-08-17, all OSI-approved and all
+# permissive. No copyleft (GPL/AGPL/LGPL) appears anywhere, which matters for a
+# contract that ships as a compiled WASM artifact.
+allow = [
+    "Apache-2.0",
+    # `wasi`, `wasmparser` and `wasmparser-nostd` carry this. SPDX treats a
+    # `WITH <exception>` expression as distinct from the bare license, so it
+    # must be allowed explicitly even though the exception only grants
+    # ADDITIONAL permission (it drops the attribution requirement on compiled
+    # output) and is therefore strictly more permissive than plain Apache-2.0.
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[licenses.private]
+# `protection-pool` itself carries no `license` field and is never published to
+# crates.io — it ships as a deployed WASM contract. Ignoring it here is the
+# correct mechanism: choosing a license for a public, SCF-funded repository is
+# a project decision, not something a dependency gate should imply by default.
+# If a license is later chosen, add it to Cargo.toml and this can be removed.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

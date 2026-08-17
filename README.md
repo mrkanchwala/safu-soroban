@@ -287,15 +287,61 @@ pub enum DataKey {
   commits Tranche 1 to a flat "2%/day" payout cap. What's built here is
   V8's real dynamic 5%/3%/1% cap, a deliberate choice ("copy V8 wholesale"
   read as meaning the actual mechanic, not the grant text's simplified
-  description). Not yet raised with the SCF team.
-- **No Halmos-equivalent exists for Soroban.** The solvency invariant and
-  claim state machine rest on test coverage (184 unit tests, 97.47% line
-  coverage, 100% of catchable mutants killed, re-confirmed 2026-07-31
-  against the typed-error-conversion code) and 133,672 fuzz runs
-  across two targets and multiple environments, rather than symbolic
-  proof. See `TESTING.md` for the full methodology. Certora Sunbeam (the
-  real ecosystem tool) is deliberately deferred to Tranche 3's SCF-funded
-  audit.
+  description). This section is the disclosure: SCF reviewed the Tranche 1
+  deliverables against this repository, returned no comments, and approved
+  the tranche on 2026-08-08.
+- **Automated analysis of this contract is currently zero.** Three
+  independent reasons, none of them a contract defect, all worth stating
+  plainly rather than leaving implied:
+  - **No Halmos-equivalent exists for Soroban.** Certora Sunbeam (the real
+    ecosystem tool) is deliberately deferred to Tranche 3's SCF-funded audit.
+  - **Fuzzing has no Tranche 2 coverage.** Both targets compile clean but
+    cannot execute on the current development host: libFuzzer aborts with
+    `AddressSanitizer: SEGV in flockfile` inside its own startup print,
+    before a single iteration, and this reproduces on an empty no-op target
+    (see `Dockerfile.fuzz`'s header). The last verified run — 2026-07-14,
+    4,270 runs, 0 crashes — predates every Tranche 2 change and the
+    `__constructor` migration, and both targets were edited since. The run
+    is pending on Linux via `Dockerfile.fuzz`.
+  - **`cargo-scout-audit` cannot analyse the crate at all.** Scout 0.3.16
+    builds against `wasm32-unknown-unknown`; `soroban-sdk` 27 refuses that
+    target on Rust 1.82+ and requires `wasm32v1-none`, which this contract
+    correctly uses. Scout prints a `0 Critical / 0 Medium / 0 Minor` summary
+    row **beside `build failed`** — that row is vacuous, no detector ran, and
+    it must not be read as a pass.
+
+  What assurance does rest on: **238 unit tests** (all passing as of
+  2026-08-17), the Tranche 1 coverage and mutation results recorded in
+  `TESTING.md` (97.47% line coverage, 100% of catchable mutants killed —
+  measured against the T1 code, not re-measured for T2), and a manual
+  adversarial review checklist. See `TESTING.md` for methodology.
+- **The contract is not upgradeable.** There is no upgrade authority
+  anywhere in it. This is deliberate and is a real positive against
+  OWASP SC10, but the tradeoff is explicit: there is no post-deployment
+  bug-fix path, so a defect found after mainnet deployment requires a
+  migration to a new contract rather than a patch. Confirm this posture is
+  still wanted before the mainnet deploy.
+- **Residual oracle risk, stated precisely.** A compromised oracle key
+  cannot unilaterally cause a payout: `deadline` is bounded in both
+  directions, `hack_timestamp` cannot be future-dated, `entitlement` is
+  capped by the victim's own stake times their tier, the claim id is the
+  nonce, and decisively **the victim must call `approve_claim` themselves**
+  with the payout going only to the beneficiary hash committed at stake
+  time. Two exposures survive that and belong in the Tranche 3 threat model
+  rather than being left implicit in "cannot cause a payout":
+  - **Griefing / availability.** A compromised oracle can set
+    `active_claim_id`, which blocks both `withdraw` and `emergency_exit`,
+    including the pause-time escape hatch. Bounded to roughly 10% of
+    stakers per day and remediable by an admin `cancel_claim`, but note
+    that nothing permissionless clears a `PendingTime` claim
+    (`expire_pending_approval` requires `AwaitingApproval`,
+    `expire_stale_claim` requires `Active`).
+  - **Collusive drain, not unilateral theft.** Inflated claims that a
+    colluding or credulous victim approves. Capped by the stress cap,
+    solvency check, cooldown, vesting and outflow cap, and the victim burns
+    their entire lifetime points balance. Slow, observable and bounded —
+    materially better than a direct vault drain — but it is the real
+    exposure and it is architectural, not incidental.
 - **`cancel_pending_override`'s mechanics were re-verified against V8
   directly** (was previously an unconfirmed guess), see `src/claim.rs`
   module doc comment for the full account of what was wrong and what was
