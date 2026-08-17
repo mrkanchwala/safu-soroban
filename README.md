@@ -130,9 +130,38 @@ breakdown: `TESTING.md` §4.
 
 ### Deploy-time arguments
 
-`initialize(admin, oracle, co_signer, xlm_token, pool_cap)`. `pool_cap`
-is a plain argument, never hardcoded into contract logic, and stays
-admin-adjustable afterward via `set_pool_cap` (mirrors V8's mutable
+`__constructor(admin, oracle, oracle_pubkey, co_signer, xlm_token, pool_cap)`
+
+Pass these as constructor arguments **on the deploy itself** — e.g.
+`stellar contract deploy --wasm <path> -- --admin <G...> --oracle <G...>
+--oracle_pubkey <hex32> --co_signer <G...> --xlm_token <C...> --pool_cap
+6000000000000`. There is no separate initialization call.
+
+**CHANGED 2026-08-17 (7a audit, Finding 3): this was `initialize`, a separate
+entrypoint.** It authorized the `admin` **argument** handed to it, and the
+only thing preventing a second call was the `AlreadyInitialized` guard —
+which stops re-initialization but not being *first*. Between the deploy
+transaction and the legitimate init transaction, anyone watching the chain
+could call `initialize` naming themselves admin. The T1 deployment recorded
+above used two separate transactions, so that window was real, not
+hypothetical. `__constructor` runs inside the deploy invocation, so the gap
+no longer exists and a failed validation aborts the deployment atomically
+rather than leaving a half-configured contract. Note this could not have been
+retrofitted later: a contract deployed without a constructor can never gain
+one, which is why it changed before D4 rather than after.
+
+**`oracle_pubkey`** was added by Tranche 2 / D1 and was previously missing
+from this line (Finding 6). The oracle has two distinct identities — an
+`Address` (policy: auth, rate limit, beneficiary guard, admin invariants) and
+a 32-byte Ed25519 pubkey (attestation: `ed25519_verify` over the signed claim
+approval). Both are required at construction so a deployment can never hold a
+working oracle Address with no attestation key. Rotate with
+`set_oracle_identity(new_oracle, new_pubkey)` — prefer it over `set_oracle` +
+`set_oracle_pubkey` in sequence, which leaves a window where the two
+identities disagree and every oracle-path claim fails closed (see `admin.rs`).
+
+`pool_cap` is a plain argument, never hardcoded into contract logic, and
+stays admin-adjustable afterward via `set_pool_cap` (mirrors V8's mutable
 `maxPoolSize`). The intended Tranche 1 deploy value: **600,000 XLM**
 (approximating V8's 60 ETH cap) = `6_000_000_000_000` stroops
 (1 XLM = 10,000,000 stroops).
@@ -140,7 +169,7 @@ admin-adjustable afterward via `set_pool_cap` (mirrors V8's mutable
 ## Error handling
 
 Every fallible public entrypoint returns `Result<T, PoolError>` — a typed
-`#[contracterror]` enum (`src/error.rs`, 72 variants) — instead of
+`#[contracterror]` enum (`src/error.rs`, 73 variants) — instead of
 `panic!`, the standard modern Soroban convention. Callers get a typed
 error code, not just an opaque host trap. Converted 2026-07-31 from an
 earlier all-`panic!` version: same validation conditions, same order,

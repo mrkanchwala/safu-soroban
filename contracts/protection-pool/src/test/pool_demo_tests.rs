@@ -66,8 +66,7 @@ fn run_dummy_attack(
     );
     pause();
 
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(env, s, &s.oracle,
         &staker,
         &tx_hash(env, seed),
         &expected_entitlement,

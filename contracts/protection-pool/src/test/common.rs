@@ -6,11 +6,13 @@
 
 #![cfg(test)]
 
+use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{Address, BytesN, Env};
-use std::{println, string::{String, ToString}, thread, time::Duration};
+use soroban_sdk::{Address, BytesN, ConversionError, Env, InvokeError};
+use std::{println, string::{String, ToString}, thread, time::Duration, vec::Vec};
 
+use crate::error::PoolError;
 use crate::types::LEDGERS_PER_DAY;
 use crate::{ProtectionPool, ProtectionPoolClient};
 
@@ -43,6 +45,16 @@ pub struct Setup<'a> {
     pub co_signer: Address,
     pub token_admin: StellarAssetClient<'a>,
     pub token_id: Address,
+    /// D1 (T2): needed because the approval payload commits to
+    /// `env.current_contract_address()`. A test can only reproduce that
+    /// binding by running the payload builder inside `env.as_contract(...)`,
+    /// which needs the id.
+    pub contract_id: Address,
+    /// D1 (T2): the oracle's Ed25519 ATTESTATION key — the private half of
+    /// what `initialize` stored as `OraclePubKey`. Distinct from
+    /// `Setup::oracle`, which is the policy `Address`; the two identities
+    /// are deliberately separate (see storage::DataKey::OraclePubKey).
+    pub oracle_key: SigningKey,
 }
 
 pub fn setup(env: &Env) -> Setup<'_> {
@@ -58,9 +70,22 @@ pub fn setup_with_cap(env: &Env, pool_cap: i128) -> Setup<'_> {
     let token_id = sac.address();
     let token_admin = StellarAssetClient::new(env, &token_id);
 
-    let contract_id = env.register(ProtectionPool, ());
+    let oracle_key = oracle_signing_key();
+    // CHANGED 2026-08-17 (7a audit, Finding 3): the pool is now configured by
+    // `__constructor` at registration rather than by a separate
+    // `client.initialize(...)` call, matching how it will actually deploy.
+    let contract_id = env.register(
+        ProtectionPool,
+        (
+            admin.clone(),
+            oracle.clone(),
+            verifying_key_bytes(env, &oracle_key),
+            co_signer.clone(),
+            token_id.clone(),
+            pool_cap,
+        ),
+    );
     let client = ProtectionPoolClient::new(env, &contract_id);
-    client.initialize(&admin, &oracle, &co_signer, &token_id, &pool_cap);
 
     Setup {
         client,
@@ -69,7 +94,185 @@ pub fn setup_with_cap(env: &Env, pool_cap: i128) -> Setup<'_> {
         co_signer,
         token_admin,
         token_id,
+        contract_id,
+        oracle_key,
     }
+}
+
+// -----------------------------------------------------------------------
+// D1 (T2) — oracle approval signing helpers.
+//
+// These sign REAL Ed25519 approvals against the same payload builder the
+// contract verifies with, rather than stubbing verification out. That is
+// the point: `submit_claim`'s oracle path is now a cryptographic gate, and
+// a test suite that bypassed it would no longer be testing the contract
+// that ships.
+//
+// What this does NOT prove is that the payload ENCODING is what the
+// off-chain signer produces — sharing `build_approval_payload` with the
+// contract makes that self-consistent by construction. Two separate things
+// cover it: `payload_encoding_is_stable_and_field_ordered` below (an
+// independently written, longhand reconstruction, so a reordered or dropped
+// field fails) and, cross-language, the `api/signer.py` KMS round-trip.
+// -----------------------------------------------------------------------
+
+/// Fixed key, not randomly generated — a failing signature test must be
+/// reproducible from the source alone, and a random key would make a
+/// failure depend on the run.
+pub fn oracle_signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[7u8; 32])
+}
+
+/// A DIFFERENT valid key, for "signed by the wrong party" tests.
+pub fn other_signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[9u8; 32])
+}
+
+pub fn verifying_key_bytes(env: &Env, sk: &SigningKey) -> BytesN<32> {
+    BytesN::from_array(env, &sk.verifying_key().to_bytes())
+}
+
+/// One hour out — comfortably inside `MAX_APPROVAL_WINDOW_SECONDS` (24h),
+/// so the default path exercises a normal approval rather than a boundary.
+pub fn default_deadline(env: &Env) -> u64 {
+    env.ledger().timestamp() + 3_600
+}
+
+/// Signs an already-built payload. Exposed separately so a test can sign a
+/// deliberately WRONG payload (e.g. one carrying V8's domain string) that
+/// `build_approval_payload` would never produce.
+pub fn sign_bytes(env: &Env, sk: &SigningKey, payload: &soroban_sdk::Bytes) -> BytesN<64> {
+    let bytes: Vec<u8> = payload.iter().collect();
+    BytesN::from_array(env, &sk.sign(&bytes).to_bytes())
+}
+
+/// Rebuilds the exact payload the contract will build, then signs it with
+/// `sk`. `env.as_contract` is required, not incidental: the payload commits
+/// to `env.current_contract_address()`, which only resolves inside the
+/// contract's own context.
+#[allow(clippy::too_many_arguments)]
+pub fn sign_approval_with(
+    env: &Env,
+    s: &Setup,
+    sk: &SigningKey,
+    wallet: &Address,
+    tx_hash: &BytesN<32>,
+    entitlement: &i128,
+    tier: &u32,
+    hack_timestamp: &u64,
+    deadline: &u64,
+) -> BytesN<64> {
+    let payload = env.as_contract(&s.contract_id, || {
+        crate::claim::build_approval_payload(
+            env,
+            wallet,
+            tx_hash,
+            *entitlement,
+            *tier,
+            *hack_timestamp,
+            *deadline,
+        )
+    });
+    sign_bytes(env, sk, &payload)
+}
+
+/// Signs with the configured oracle key — the happy path.
+#[allow(clippy::too_many_arguments)]
+pub fn sign_approval(
+    env: &Env,
+    s: &Setup,
+    wallet: &Address,
+    tx_hash: &BytesN<32>,
+    entitlement: &i128,
+    tier: &u32,
+    hack_timestamp: &u64,
+    deadline: &u64,
+) -> BytesN<64> {
+    sign_approval_with(
+        env,
+        s,
+        &s.oracle_key.clone(),
+        wallet,
+        tx_hash,
+        entitlement,
+        tier,
+        hack_timestamp,
+        deadline,
+    )
+}
+
+/// Drop-in for the pre-D1 `s.client.submit_claim(..)`: same six arguments,
+/// with a valid deadline and signature generated to match. Every existing
+/// test call site was migrated to this, so those tests keep asserting the
+/// behaviour they were written for while now also traversing the real
+/// signature gate. Signature-specific behaviour is tested directly against
+/// `s.client.submit_claim` in `claim_tests.rs`, not through this helper.
+#[allow(clippy::too_many_arguments)]
+pub fn submit_claim_signed(
+    env: &Env,
+    s: &Setup,
+    caller: &Address,
+    wallet: &Address,
+    tx_hash: &BytesN<32>,
+    entitlement: &i128,
+    tier: &u32,
+    hack_timestamp: &u64,
+) -> BytesN<32> {
+    let deadline = default_deadline(env);
+    let sig = sign_approval(
+        env,
+        s,
+        wallet,
+        tx_hash,
+        entitlement,
+        tier,
+        hack_timestamp,
+        &deadline,
+    );
+    s.client.submit_claim(
+        caller,
+        wallet,
+        tx_hash,
+        entitlement,
+        tier,
+        hack_timestamp,
+        &deadline,
+        &sig,
+    )
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn try_submit_claim_signed(
+    env: &Env,
+    s: &Setup,
+    caller: &Address,
+    wallet: &Address,
+    tx_hash: &BytesN<32>,
+    entitlement: &i128,
+    tier: &u32,
+    hack_timestamp: &u64,
+) -> Result<Result<BytesN<32>, ConversionError>, Result<PoolError, InvokeError>> {
+    let deadline = default_deadline(env);
+    let sig = sign_approval(
+        env,
+        s,
+        wallet,
+        tx_hash,
+        entitlement,
+        tier,
+        hack_timestamp,
+        &deadline,
+    );
+    s.client.try_submit_claim(
+        caller,
+        wallet,
+        tx_hash,
+        entitlement,
+        tier,
+        hack_timestamp,
+        &deadline,
+        &sig,
+    )
 }
 
 pub fn new_funded_address(env: &Env, s: &Setup, funding: i128) -> Address {

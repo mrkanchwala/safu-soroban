@@ -17,18 +17,41 @@ use crate::error::PoolError;
 use crate::storage;
 use crate::types::{ClaimStatus, StakeRecord, APPROVE_WINDOW_LEDGERS};
 
+/// Implementation behind the contract's `__constructor` (`lib.rs`). Kept
+/// named `initialize` because it is an internal helper, not the ABI surface —
+/// the ABI name is what had to change (7a audit, Finding 3).
+///
 /// Reinitialization guard (vuln checklist V6) — `has()` check before any
-/// state is written, not just before returning early.
+/// state is written, not just before returning early. **Unreachable through
+/// the ABI as of 2026-08-17**: `__constructor` runs only at contract creation
+/// and cannot be invoked again, so nothing can call this twice on-chain. Kept
+/// deliberately rather than deleted — it is the invariant this function
+/// depends on, it costs one storage read, and it keeps the function correct if
+/// it is ever called from anywhere else. Same reasoning the override flow's
+/// degenerate admin==co_signer branch is kept: provably unreachable, still
+/// documented. `test/admin_tests.rs` asserts it directly.
 /// The Tranche 1 deploy-time `pool_cap` value (600,000 XLM, approximating
 /// V8's 60 ETH cap) is documented in README.md, not as a dead constant
 /// here — `pool_cap` is a plain `initialize` argument, never hardcoded
 /// into contract logic, and stays admin-adjustable afterward via
 /// `set_pool_cap` (mirrors V8's mutable `maxPoolSize`). A constant that's
 /// never referenced by any code path belongs in deploy docs, not source.
+///
+/// CHANGED for T2/D1: takes `oracle_pubkey` as well as `oracle`. The oracle
+/// has TWO identities in this contract — an `Address` (policy: auth, rate
+/// limit, beneficiary guard, admin invariants) and an Ed25519 pubkey
+/// (attestation: signature verification). Requiring both here is the
+/// "startup invariant that both are set" from the D1 eng review: it removes
+/// the window in which a deployment has a working oracle Address but no
+/// attestation key. `submit_claim` still fails closed on a missing key
+/// (`OraclePubKeyNotSet`) as defence in depth, but with this argument that
+/// state is unreachable on a fresh deploy.
+#[allow(clippy::too_many_arguments)]
 pub fn initialize(
     env: &Env,
     admin: &Address,
     oracle: &Address,
+    oracle_pubkey: &BytesN<32>,
     co_signer: &Address,
     xlm_token: &Address,
     pool_cap: i128,
@@ -54,6 +77,7 @@ pub fn initialize(
 
     storage::set_admin(env, admin);
     storage::set_oracle(env, oracle);
+    storage::set_oracle_pubkey(env, oracle_pubkey);
     storage::set_co_signer(env, co_signer);
     storage::set_xlm_token(env, xlm_token);
     storage::set_pool_cap(env, pool_cap);
@@ -224,6 +248,83 @@ pub fn set_oracle(env: &Env, new_oracle: &Address) -> Result<(), PoolError> {
         return Err(PoolError::OracleEqualsCoSigner);
     }
     storage::set_oracle(env, new_oracle);
+    storage::bump_instance_ttl(env);
+    Ok(())
+}
+
+/// Rotates the oracle's Ed25519 ATTESTATION key. Separate from `set_oracle`
+/// (which rotates the policy `Address`) — the two are distinct identities,
+/// see `storage::DataKey::OraclePubKey`.
+///
+/// Admin-only, same guard shape as `set_oracle`. Note what is deliberately
+/// NOT enforced: nothing checks that this key belongs to the same entity as
+/// the current oracle `Address`. It cannot be — an Ed25519 pubkey and a
+/// Stellar `Address` have no on-chain relationship to compare, and a
+/// contract-type oracle address has no pubkey at all. Keeping them
+/// consistent is an operational responsibility.
+///
+/// Rotation hazard, flagged rather than solved: signatures already in
+/// flight under the previous key stop verifying the moment this lands, and
+/// (per Blocker 3) they fail as an opaque host trap rather than a named
+/// error. Rotate during a quiet window and re-sign anything outstanding. A
+/// grace window accepting either key is the obvious mitigation but is
+/// deliberately out of D1 scope — it widens the attestation surface and
+/// belongs with the T3 hardening pass, not a testnet deliverable.
+pub fn set_oracle_pubkey(env: &Env, new_pubkey: &BytesN<32>) -> Result<(), PoolError> {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+
+    storage::set_oracle_pubkey(env, new_pubkey);
+    storage::bump_instance_ttl(env);
+    Ok(())
+}
+
+/// Rotates BOTH oracle identities — the policy `Address` and the Ed25519
+/// attestation key — in a single invocation.
+///
+/// ADDED 2026-08-14. `set_oracle` and `set_oracle_pubkey` both remain, and
+/// are still the right call when only one identity is moving (re-keying KMS
+/// while the Stellar account stays put, for instance). What they cannot do
+/// is move BOTH without passing through a state where the policy identity
+/// and the attestation identity belong to different entities. In that
+/// window every oracle-path claim fails: `submit_claim` matches `caller`
+/// against the new `Address`, then verifies the signature against the old
+/// key. It fails CLOSED — nothing can be forged through the gap — but it is
+/// an availability hole in the one subsystem whose entire purpose is timely
+/// payout, and the realistic trigger for rotating an oracle at all is key
+/// compromise, which is exactly when a two-step under operational pressure
+/// is least welcome.
+///
+/// There is no V8 fix to port here, because V8 has no equivalent hazard:
+/// `SAFUPoolV8.sol` recovers the signer from the signature and compares it
+/// against the single `oracle` address, so the two identities are one value
+/// and cannot drift apart. The split exists in this contract only because
+/// Soroban's `ed25519_verify` needs a raw pubkey while `require_auth` needs
+/// an `Address`. The drift window is something the port introduced, not
+/// something inherited — which is why it is worth closing here rather than
+/// documenting as an accepted V8 parity cost.
+///
+/// The `OracleEqualsCoSigner` guard is checked BEFORE either write, so a
+/// rejected rotation leaves both identities exactly as they were. Soroban
+/// rolls the whole invocation back on `Err` regardless, so this ordering is
+/// belt-and-braces — but it keeps the intent legible without the reader
+/// having to rely on host rollback semantics to see that no partial write
+/// is possible.
+pub fn set_oracle_identity(
+    env: &Env,
+    new_oracle: &Address,
+    new_pubkey: &BytesN<32>,
+) -> Result<(), PoolError> {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+
+    let co_signer = storage::get_co_signer(env);
+    if new_oracle == &co_signer {
+        return Err(PoolError::OracleEqualsCoSigner);
+    }
+
+    storage::set_oracle(env, new_oracle);
+    storage::set_oracle_pubkey(env, new_pubkey);
     storage::bump_instance_ttl(env);
     Ok(())
 }

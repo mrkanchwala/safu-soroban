@@ -19,8 +19,7 @@ fn submit_claim_by_oracle_pending_when_gate_not_met() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -44,8 +43,7 @@ fn submit_claim_awaiting_approval_when_gate_already_met() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -66,8 +64,7 @@ fn approve_claim_forfeits_and_activates() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -102,8 +99,7 @@ fn approve_claim_burns_entire_lifetime_points_balance() {
     s.token_admin.mint(&staker, &MID_STAKE);
     s.client.stake(&staker, &MID_STAKE, &ben);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -119,8 +115,7 @@ fn approve_claim_before_gate_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -138,8 +133,7 @@ fn approve_claim_after_100_days_panics() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -157,8 +151,7 @@ fn approve_claim_while_suspended_panics() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -180,8 +173,7 @@ fn expire_pending_approval_releases_reservation() {
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -230,8 +222,7 @@ fn expire_pending_approval_blocked_while_suspended() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -250,8 +241,7 @@ fn expire_pending_approval_before_deadline_panics() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -350,8 +340,7 @@ fn submit_claim_by_admin_also_works() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.admin,
+    submit_claim_signed(&env, &s, &s.admin,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -366,8 +355,7 @@ fn submit_claim_banks_points_on_immediate_activation() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -382,8 +370,7 @@ fn submit_claim_reserves_total_allocated() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -403,8 +390,7 @@ fn submit_claim_wrong_caller_panics() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     let random = Address::generate(&env);
-    let result = s.client.try_submit_claim(
-        &random,
+    let result = try_submit_claim_signed(&env, &s, &random,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -419,8 +405,7 @@ fn submit_claim_zero_entitlement_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &0,
@@ -435,8 +420,7 @@ fn submit_claim_invalid_tier_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -451,8 +435,7 @@ fn submit_claim_no_stake_panics() {
     let env = new_env();
     let s = setup(&env);
     let random = Address::generate(&env);
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &random,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -470,8 +453,7 @@ fn submit_claim_after_withdraw_panics() {
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
     s.client.withdraw(&staker, &ben);
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -486,16 +468,14 @@ fn submit_claim_twice_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
         &TIER_C,
         &now_ts(&env),
     );
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 2),
         &ENTITLEMENT,
@@ -511,8 +491,7 @@ fn submit_claim_exceeds_tier_cap_panics() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     // Tier C cap = stake * 5 = 500_000_000; ask for more.
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &600_000_000,
@@ -527,8 +506,7 @@ fn submit_claim_future_hack_timestamp_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -543,8 +521,7 @@ fn submit_claim_hack_before_stake_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -561,8 +538,7 @@ fn submit_claim_outside_claim_window_panics() {
     let (staker, _ben) = staked_wallet(&env, &s);
     let hack_ts = now_ts(&env);
     advance_days(&env, 31); // > 30-day claim window
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -579,8 +555,7 @@ fn submit_claim_at_exactly_claim_window_boundary_succeeds() {
     let (staker, _ben) = staked_wallet(&env, &s);
     let hack_ts = now_ts(&env);
     advance_days(&env, 30); // exactly at the boundary, still valid
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -596,8 +571,7 @@ fn submit_claim_insolvent_panics() {
     let (staker, _ben) = staked_wallet(&env, &s);
     // Only MID_STAKE (100_000_000) actually backing the pool; ask for
     // more than that even though it's under the tier C cap (500_000_000).
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &(MID_STAKE + 1),
@@ -614,8 +588,7 @@ fn submit_claim_exceeds_stress_cap_panics() {
     let (staker, _ben) = staked_wallet(&env, &s);
     // stress_cap at 0% utilization = 25% of total_staked = 25_000_000.
     // Ask for more than that but still within solvency/tier bounds.
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &26_000_000,
@@ -634,16 +607,14 @@ fn submit_claim_oracle_rate_limit_panics() {
     // a different wallet.
     let (staker1, _b1) = staked_wallet(&env, &s);
     let (staker2, _b2) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker1,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
         &TIER_C,
         &now_ts(&env),
     );
-    let result = s.client.try_submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker2,
         &tx_hash(&env, 2),
         &ENTITLEMENT,
@@ -659,8 +630,7 @@ fn submit_claim_admin_not_subject_to_oracle_rate_limit() {
     let s = setup(&env);
     let (staker1, _b1) = staked_wallet(&env, &s);
     let (staker2, _b2) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker1,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -669,8 +639,7 @@ fn submit_claim_admin_not_subject_to_oracle_rate_limit() {
     );
     // Admin call for a second wallet, same day — not gated by the
     // oracle-only rate limit.
-    s.client.submit_claim(
-        &s.admin,
+    submit_claim_signed(&env, &s, &s.admin,
         &staker2,
         &tx_hash(&env, 2),
         &ENTITLEMENT,
@@ -685,8 +654,7 @@ fn submit_claim_oracle_limit_resets_next_day() {
     let s = setup(&env);
     let (staker1, _b1) = staked_wallet(&env, &s);
     let (staker2, _b2) = staked_wallet(&env, &s);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker1,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -694,8 +662,7 @@ fn submit_claim_oracle_limit_resets_next_day() {
         &now_ts(&env),
     );
     advance_days(&env, 1);
-    s.client.submit_claim(
-        &s.oracle,
+    submit_claim_signed(&env, &s, &s.oracle,
         &staker2,
         &tx_hash(&env, 2),
         &ENTITLEMENT,
@@ -715,34 +682,37 @@ fn submit_claim_duplicate_wallet_tx_hash_after_cancel_panics() {
     let (staker, _ben) = staked_wallet(&env, &s);
     let hash = tx_hash(&env, 1);
     let claim_id =
-        s.client
-            .submit_claim(&s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
+        submit_claim_signed(&env, &s, &s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
     s.client.cancel_claim(&claim_id);
     // Advance a day so the oracle's daily claim-count limit (unrelated to
     // what this test targets) doesn't fire first and mask the real
     // assertion.
     advance_days(&env, 1);
-    let result = s
-        .client
-        .try_submit_claim(&s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    let result = try_submit_claim_signed(&env, &s, &s.oracle, &staker, &hash, &ENTITLEMENT, &TIER_C, &now_ts(&env));
     assert_eq!(result, Err(Ok(PoolError::ClaimAlreadyExists)));
 }
 
+/// CHANGED 2026-08-17 (7a audit, Finding 5): was
+/// `#[should_panic(expected = "SAFU: paused")]`. `require_not_paused` now
+/// returns the typed `PoolError::Paused` rather than a bare `panic!`, so this
+/// asserts the specific error code — strictly stronger than matching a panic
+/// substring, and consistent with how every other rejection in this file is
+/// tested.
 #[test]
-#[should_panic(expected = "SAFU: paused")]
 fn submit_claim_blocked_while_paused() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     s.client.pause();
-    s.client.submit_claim(
-        &s.oracle,
+    let result = try_submit_claim_signed(
+        &env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
         &TIER_C,
         &now_ts(&env),
     );
+    assert_eq!(result, Err(Ok(PoolError::Paused)));
 }
 
 // -----------------------------------------------------------------------
@@ -757,8 +727,7 @@ fn unlock_pending_claim_moves_to_awaiting_approval_after_gate() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -784,8 +753,7 @@ fn unlock_pending_claim_before_gate_panics() {
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -803,8 +771,7 @@ fn unlock_pending_claim_already_active_panics() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -840,8 +807,7 @@ fn active_claim_with_entitlement(
 ) -> (Address, Address, soroban_sdk::BytesN<32>) {
     let (staker, ben) = staked_wallet(env, s);
     advance_days(env, 90); // gate met, lands in AwaitingApproval on submit
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(env, s, &s.oracle,
         &staker,
         &tx_hash(env, 1),
         &entitlement,
@@ -862,8 +828,7 @@ fn approve_claim_at_exactly_deadline_succeeds() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -899,8 +864,7 @@ fn approve_claim_burns_prior_banked_plus_new_points_exactly() {
     s.client.stake(&staker, &MID_STAKE, &beneficiary); // fresh record
     advance_days(&env, 90); // cycle 2: another 90 days -> another 720 points
 
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,
@@ -1111,8 +1075,7 @@ fn cancel_pending_claim_no_penalty() {
     let env = new_env();
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,

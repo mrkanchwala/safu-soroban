@@ -140,15 +140,12 @@ fn stress_cap_tightens_at_exactly_20_percent_utilization() {
     let _ = staked_wallet(&env, &s);
     let _ = staked_wallet(&env, &s);
     // total_staked = 500M. Stress cap at 0% utilization = 25% = 125M.
-    s.client
-        .submit_claim(&s.oracle, &w1, &tx_hash(&env, 1), &100_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.oracle, &w1, &tx_hash(&env, 1), &100_000_000, &TIER_C, &now_ts(&env));
     // utilization now exactly 2000 bps → rate drops to 1000 → cap 50M.
     // Same real day (500s later), different ledger.
     advance_ledgers(&env, 100);
     // 100M (today's total) + 1M > 50M → must error.
-    let result = s
-        .client
-        .try_submit_claim(&s.admin, &w2, &tx_hash(&env, 2), &1_000_000, &TIER_C, &now_ts(&env));
+    let result = try_submit_claim_signed(&env, &s, &s.admin, &w2, &tx_hash(&env, 2), &1_000_000, &TIER_C, &now_ts(&env));
     assert_eq!(result, Err(Ok(PoolError::DailyStressCapExceeded)));
 }
 
@@ -169,18 +166,14 @@ fn stress_cap_exact_daily_fills_walk_utilization_to_50_percent() {
     let (w4, _b4) = staked_wallet(&env, &s);
     let _ = staked_wallet(&env, &s);
     // Day 1: util 0 → cap 125M; take 100M → util 2000.
-    s.client
-        .submit_claim(&s.oracle, &w1, &tx_hash(&env, 1), &100_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.oracle, &w1, &tx_hash(&env, 1), &100_000_000, &TIER_C, &now_ts(&env));
     // Days 2–4: rate 1000 → cap 50M; exact fills.
     advance_days(&env, 1);
-    s.client
-        .submit_claim(&s.admin, &w2, &tx_hash(&env, 2), &50_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.admin, &w2, &tx_hash(&env, 2), &50_000_000, &TIER_C, &now_ts(&env));
     advance_days(&env, 1);
-    s.client
-        .submit_claim(&s.admin, &w3, &tx_hash(&env, 3), &50_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.admin, &w3, &tx_hash(&env, 3), &50_000_000, &TIER_C, &now_ts(&env));
     advance_days(&env, 1);
-    s.client
-        .submit_claim(&s.admin, &w4, &tx_hash(&env, 4), &50_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.admin, &w4, &tx_hash(&env, 4), &50_000_000, &TIER_C, &now_ts(&env));
     assert_eq!(s.client.get_total_allocated(), 250_000_000);
 }
 
@@ -196,22 +189,16 @@ fn stress_cap_rate_drops_at_exactly_50_percent_utilization() {
     let (w3, _b3) = staked_wallet(&env, &s);
     let (w4, _b4) = staked_wallet(&env, &s);
     let (w5, _b5) = staked_wallet(&env, &s);
-    s.client
-        .submit_claim(&s.oracle, &w1, &tx_hash(&env, 1), &100_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.oracle, &w1, &tx_hash(&env, 1), &100_000_000, &TIER_C, &now_ts(&env));
     advance_days(&env, 1);
-    s.client
-        .submit_claim(&s.admin, &w2, &tx_hash(&env, 2), &50_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.admin, &w2, &tx_hash(&env, 2), &50_000_000, &TIER_C, &now_ts(&env));
     advance_days(&env, 1);
-    s.client
-        .submit_claim(&s.admin, &w3, &tx_hash(&env, 3), &50_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.admin, &w3, &tx_hash(&env, 3), &50_000_000, &TIER_C, &now_ts(&env));
     advance_days(&env, 1);
-    s.client
-        .submit_claim(&s.admin, &w4, &tx_hash(&env, 4), &50_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.admin, &w4, &tx_hash(&env, 4), &50_000_000, &TIER_C, &now_ts(&env));
     // Utilization exactly 5000 bps → rate 300 → cap 15M. 16M must error.
     advance_days(&env, 1);
-    let result = s
-        .client
-        .try_submit_claim(&s.admin, &w5, &tx_hash(&env, 5), &16_000_000, &TIER_C, &now_ts(&env));
+    let result = try_submit_claim_signed(&env, &s, &s.admin, &w5, &tx_hash(&env, 5), &16_000_000, &TIER_C, &now_ts(&env));
     assert_eq!(result, Err(Ok(PoolError::DailyStressCapExceeded)));
 }
 
@@ -230,8 +217,7 @@ fn submit_claim_exact_solvency_and_stress_fill_succeeds() {
     // Next day: solvency gap = 100M − 97M = 3M; stress cap = 100M ×
     // 300bps (util 9700) = 3M. e = 3M fills BOTH exactly — must pass.
     advance_days(&env, 1);
-    s.client
-        .submit_claim(&s.oracle, &wb, &tx_hash(&env, 2), &3_000_000, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.oracle, &wb, &tx_hash(&env, 2), &3_000_000, &TIER_C, &now_ts(&env));
     assert_eq!(s.client.get_total_allocated(), 100_000_000);
 }
 
@@ -327,8 +313,7 @@ fn outflow_rate_drops_at_exactly_20_percent_utilization() {
     // Lands in AwaitingApproval; approve_claim (same ledger, so the
     // snapshot math below is unaffected) takes the snapshot (cap base) =
     // 1.35B. 270M / 1.35B = exactly 2000 bps → 300 bps → cap 40.5M.
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &270_000_000,
@@ -404,12 +389,10 @@ fn override_after_cancel_does_not_touch_other_reservations() {
     let (wx, _bx) = staked_wallet(&env, &s);
     let (wy, _by) = staked_wallet(&env, &s);
     // Live reservation on wx (PendingTime — no forfeiture).
-    s.client
-        .submit_claim(&s.oracle, &wx, &tx_hash(&env, 1), &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.oracle, &wx, &tx_hash(&env, 1), &ENTITLEMENT, &TIER_C, &now_ts(&env));
     // wy: claim then cancel (its reservation already released by cancel).
     let hash_y = tx_hash(&env, 2);
-    let claim_y = s.client.submit_claim(
-        &s.admin, &wy, &hash_y, &ENTITLEMENT, &TIER_C, &now_ts(&env),
+    let claim_y = submit_claim_signed(&env, &s, &s.admin, &wy, &hash_y, &ENTITLEMENT, &TIER_C, &now_ts(&env),
     );
     s.client.cancel_claim(&claim_y);
     assert_eq!(s.client.get_total_allocated(), ENTITLEMENT); // wx's only
@@ -484,8 +467,7 @@ fn override_blocks_second_claim_on_wallet_with_existing_claim() {
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     // Wallet already has a live claim (PendingTime — gate not met).
-    s.client
-        .submit_claim(&s.oracle, &staker, &tx_hash(&env, 1), &ENTITLEMENT, &TIER_C, &now_ts(&env));
+    submit_claim_signed(&env, &s, &s.oracle, &staker, &tx_hash(&env, 1), &ENTITLEMENT, &TIER_C, &now_ts(&env));
     // A DIFFERENT tx_hash for the SAME wallet via override must be
     // refused — without the fix, this would create a second, independently
     // payable claim against the same forfeited stake.
@@ -518,8 +500,7 @@ fn claim_stream_cap_shrinking_mid_day_fails_gracefully_not_via_panic() {
 
     let (staker_a, ben_a) = staked_wallet(&env, &s); // MID_STAKE = 100M
     advance_days(&env, 90); // gate met
-    let claim_a = s.client.submit_claim(
-        &s.oracle,
+    let claim_a = submit_claim_signed(&env, &s, &s.oracle,
         &staker_a,
         &tx_hash(&env, 1),
         &100_000_000, // TIER_B cap = 100M*10 = 1B, plenty of room
@@ -673,8 +654,7 @@ fn penalty_lock_still_active_after_two_days() {
     let s = setup(&env);
     let (staker, ben) = staked_wallet(&env, &s);
     advance_days(&env, 90);
-    let claim_id = s.client.submit_claim(
-        &s.oracle,
+    let claim_id = submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
         &ENTITLEMENT,

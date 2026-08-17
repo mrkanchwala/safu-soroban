@@ -1,8 +1,19 @@
-//! Data model ported from `SAFUPoolV8.sol`, pool/claims mechanics only.
-//! Yield-deployment fields (wstETH/Lido: `wstethDeployed`, `totalDeployed`,
-//! `totalDeployedETH`) are deliberately excluded — Tranche 1 scope is the
-//! core pool only, no yield venue. See context/knowledge/smartcontract-soroban.md
+//! Data model ported from `SAFUPoolV8.sol`.
+//!
+//! Tranche 1 covered pool/claims mechanics only, excluding V8's per-staker
+//! yield-deployment fields (`wstethDeployed`, `totalDeployed`,
+//! `totalDeployedETH`) — see context/knowledge/smartcontract-soroban.md
 //! "scope boundary" note (research-ops repo) for why.
+//!
+//! Doc corrected 2026-08-17 (7a audit, Finding 6): this header still claimed
+//! "no yield venue" after D2 landed. Tranche 2 DOES add yield, and its
+//! constants live in this file (`MAX_DEPLOY_BPS`, `DEPLOY_BPS_DENOMINATOR`,
+//! see the D2 block below). What remains true is that V8's *per-staker*
+//! deployment tranche is still deliberately absent — this contract holds one
+//! pooled position and bounds deployment by admin policy instead, which is
+//! why V8's inline 100%-deploy could not be ported. D1's oracle-signature
+//! constants (`MAX_APPROVAL_WINDOW_SECONDS`, `REVOCATION_TTL_LEDGERS`) are
+//! also defined here.
 
 use soroban_sdk::{contracttype, Address, BytesN};
 
@@ -39,6 +50,53 @@ pub const VESTING_LEDGERS: u32 = 45 * LEDGERS_PER_DAY;
 /// a genuine paid claim (that forfeiture is permanent — do not conflate).
 pub const PENALTY_LOCK_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 
+// -----------------------------------------------------------------------
+// D1 (Tranche 2) — on-chain Ed25519 oracle approval verification.
+//
+// V8 has no equivalent to the two constants below: on EVM, `revokedApprovals`
+// is a permanent mapping, so a revocation simply never expires and no
+// deadline bound is needed to keep it alive. Soroban's `temporary()` storage
+// has a finite TTL, which introduces a failure mode EVM does not have — a
+// revocation that expires BEFORE the approval it revokes silently
+// un-revokes that approval. These two constants exist to make that failure
+// mode unreachable, and the const-assert below is what proves it rather
+// than leaving it to convention (eng review, Warning 6 / revocation-TTL
+// resolution, `outputs/2026-08-13_plan-eng-review-safu-t2-d1-ed25519.md`).
+// -----------------------------------------------------------------------
+
+/// Maximum lifetime of a single oracle approval signature, in real seconds.
+/// `submit_claim` rejects any `deadline` further out than this. Bounding it
+/// is what lets `REVOCATION_TTL_LEDGERS` provably outlive every deadline a
+/// valid approval can carry.
+pub const MAX_APPROVAL_WINDOW_SECONDS: u64 = 24 * 3_600;
+
+/// TTL applied to a revocation entry in `temporary()` storage.
+///
+/// A revocation only has to survive until the approval it revokes expires —
+/// after that, `SignatureExpired` rejects the approval anyway, so the
+/// revocation is no longer load-bearing and letting it be reclaimed is
+/// correct (and keeps revocation state bounded rather than growing forever).
+///
+/// Note the asymmetry that makes `temporary()` safe here: the entry records
+/// a REVOCATION, not a permission. Anyone extending its TTL — which anyone
+/// can do on Soroban, permissionlessly — only makes the revocation last
+/// LONGER. The failure direction is fail-closed. The one genuine hazard is
+/// a TTL shorter than the deadline, which the const-assert below rules out.
+pub const REVOCATION_TTL_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
+
+// The revocation must outlive the approval under every ledger close rate.
+// Ledgers nominally close ~5s apart, but that is a network property this
+// contract cannot depend on, so the check assumes a pathological 1 second
+// per ledger — the worst case for us, since faster ledgers burn TTL faster
+// in wall-clock terms. Under that assumption REVOCATION_TTL_LEDGERS covers
+// REVOCATION_TTL_LEDGERS seconds; requiring that to exceed the maximum
+// approval window makes "revocation outlives deadline" a compile-time fact.
+// At the nominal 5s/ledger the real margin is 7 days against a 24h bound.
+const _: () = assert!(
+    REVOCATION_TTL_LEDGERS as u64 >= MAX_APPROVAL_WINDOW_SECONDS,
+    "revocation TTL must outlive the longest legal approval deadline"
+);
+
 /// Points burn-on-claim mechanism (locked 2026-07-22, task plan
 /// `outputs/2026-07-22_task-plan-safu-points-burn-mechanism.md`, eng review
 /// `outputs/2026-07-22_plan-eng-review-safu-points-burn-mechanism.md`).
@@ -59,6 +117,48 @@ pub const APPROVE_WINDOW_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
 /// — the 7-day mandatory cooldown must never count as staker inactivity
 /// (eng review blocker #2).
 pub const COLLECTION_INACTIVITY_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
+
+// -----------------------------------------------------------------------
+// D2 (Tranche 2) — DeFindex vault yield deployment.
+//
+// V8 deploys 100% of every stake into Lido inline inside `stakeETH`
+// (`SAFUPoolV8.sol:295-303`) and holds no standing buffer, relying on the
+// owner to call `provideClaimLiquidity` during the 7-day claim cooldown.
+// That is safe on V8 ONLY because V8 tracks deployment per staker
+// (`StakeRecord.wstethDeployed`) and unwinds that exact tranche inline
+// inside `withdraw()` (`:330-346`), so a withdrawal always has precisely
+// its own principal available.
+//
+// This contract has no per-staker deployment tranche, and — decisively —
+// neither of its two withdrawal paths has any cooldown in which an
+// operator could react: `stake::withdraw` has no time lock at all, and
+// `stake::emergency_exit` is the pause-time escape hatch, so it must work
+// exactly when the operator is least able to intervene. Porting V8's
+// deploy policy here would therefore break principal withdrawal, not just
+// claims.
+//
+// Locked design (eng review 2026-08-14,
+// `outputs/2026-08-14_plan-eng-review-safu-t2-d2-yield-integration.md`):
+// deployment is a SEPARATE admin call, bounded by `deploy_bps`, floored so
+// it can never touch already-reserved entitlements, and NEVER auto-unwound
+// from any user-facing path. The economics make this free rather than a
+// trade-off: XLM on Blend pays ~0.05% APY, so the yield forgone by
+// holding a large liquid buffer is negligible against the liveness it buys.
+// -----------------------------------------------------------------------
+
+/// Hard ceiling on `deploy_bps`, enforced in `set_deploy_bps` — an admin
+/// cannot configure the pool into V8's 100%-deployed posture even
+/// deliberately. Operational recommendation for T2 is 5_000 (50%); this
+/// constant is the bound, not the setting.
+pub const MAX_DEPLOY_BPS: i128 = 8_000;
+
+/// `deploy_bps` and the vault address both start unset, so every yield
+/// path is fail-closed on a fresh deploy: `deploy_bps` reads 0 and
+/// `set_vault` has not run, meaning the pool behaves exactly as it did in
+/// Tranche 1 until an admin deliberately turns deployment on. This is why
+/// D2 requires NO change to `initialize`'s signature — unlike D1, which
+/// had to add `oracle_pubkey`.
+pub const DEPLOY_BPS_DENOMINATOR: i128 = 10_000;
 
 // -----------------------------------------------------------------------
 // Stake bounds — dynamic, as basis points of the configurable pool cap,

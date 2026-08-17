@@ -9,6 +9,14 @@ mod admin_tests;
 mod blend_scenario_tests;
 mod claim_tests;
 mod common;
+/// T2/D1 — on-chain Ed25519 oracle approval verification. Split out rather
+/// than folded into `claim_tests` because it tests the signature gate
+/// itself, not claim mechanics.
+mod d1_signature_tests;
+/// T2/D2 — DeFindex vault yield deployment. Split out for the same reason
+/// as `d1_signature_tests`: this covers the liquid-vs-deployed accounting
+/// layer and its invariant, not pool mechanics.
+mod d2_vault_tests;
 mod mutation_gap_tests;
 mod override_tests;
 mod pool_demo_tests;
