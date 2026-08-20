@@ -23,12 +23,12 @@ WASM (`cargo build --release --target wasm32v1-none`), `/audit-chain` +
 `/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM, see `audits/`),
 fuzzed 151,398 runs with zero crashes. **Live contract ID:**
 `CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB` (see
-"Testnet deployment (Tranche 2 — current)" below). **Error handling:** every public entrypoint
+"Testnet deployment (Tranche 2, current)" below). **Error handling:** every public entrypoint
 returns `Result<T, PoolError>` via a typed `#[contracterror]` enum
-(`src/error.rs`) rather than raw panics — converted 2026-07-31, see
+(`src/error.rs`) rather than raw panics. Converted 2026-07-31, see
 "Error handling" below.
 
-## Testnet deployment (Tranche 2 — current)
+## Testnet deployment (Tranche 2, current)
 
 **This is the live contract.** Deployed and initialized on Stellar testnet
 2026-08-20, carrying the merged Tranche 2 code: on-chain Ed25519 oracle
@@ -65,10 +65,10 @@ faith, [`reviewer-kit/`](reviewer-kit/) contains a script and the testnet keys
 to trigger and verify a real payout directly against this contract, on your own
 schedule. See [`reviewer-kit/README.md`](reviewer-kit/README.md).
 
-## Testnet deployment (Tranche 1 — superseded)
+## Testnet deployment (Tranche 1, superseded)
 
 Kept for the record. This was the Tranche 1 deliverable, deployed and
-initialized 2026-07-29, and it is **no longer the active contract** — it does
+initialized 2026-07-29, and it is **no longer the active contract**. It does
 not contain the Tranche 2 code and carries none of the Tranche 2 activity.
 
 - **Contract ID:** `CCQT2VRONZTE5ODBNM3XAQWUPQRLKGMU4MMLA2JK6HJHJMK34Q7ZFTGJ`
@@ -98,7 +98,7 @@ is where the integration with an existing Stellar DeFi protocol happens.
 
 ```bash
 cargo check --package protection-pool          # fast type/logic check
-cargo test --package protection-pool           # 184 unit tests
+cargo test --package protection-pool           # 238 unit tests
 cargo build --package protection-pool --release --target wasm32v1-none
 stellar contract build --optimize              # or: stellar contract optimize --wasm <path>
 ```
@@ -165,14 +165,14 @@ breakdown: `TESTING.md` §4.
 
 `__constructor(admin, oracle, oracle_pubkey, co_signer, xlm_token, pool_cap)`
 
-Pass these as constructor arguments **on the deploy itself** — e.g.
+Pass these as constructor arguments **on the deploy itself**, e.g.
 `stellar contract deploy --wasm <path> -- --admin <G...> --oracle <G...>
 --oracle_pubkey <hex32> --co_signer <G...> --xlm_token <C...> --pool_cap
 6000000000000`. There is no separate initialization call.
 
 **CHANGED 2026-08-17 (7a audit, Finding 3): this was `initialize`, a separate
 entrypoint.** It authorized the `admin` **argument** handed to it, and the
-only thing preventing a second call was the `AlreadyInitialized` guard —
+only thing preventing a second call was the `AlreadyInitialized` guard,
 which stops re-initialization but not being *first*. Between the deploy
 transaction and the legitimate init transaction, anyone watching the chain
 could call `initialize` naming themselves admin. The T1 deployment recorded
@@ -184,12 +184,12 @@ retrofitted later: a contract deployed without a constructor can never gain
 one, which is why it changed before D4 rather than after.
 
 **`oracle_pubkey`** was added by Tranche 2 / D1 and was previously missing
-from this line (Finding 6). The oracle has two distinct identities — an
+from this line (Finding 6). The oracle has two distinct identities: an
 `Address` (policy: auth, rate limit, beneficiary guard, admin invariants) and
 a 32-byte Ed25519 pubkey (attestation: `ed25519_verify` over the signed claim
 approval). Both are required at construction so a deployment can never hold a
 working oracle Address with no attestation key. Rotate with
-`set_oracle_identity(new_oracle, new_pubkey)` — prefer it over `set_oracle` +
+`set_oracle_identity(new_oracle, new_pubkey)` . Prefer it over `set_oracle` +
 `set_oracle_pubkey` in sequence, which leaves a window where the two
 identities disagree and every oracle-path claim fails closed (see `admin.rs`).
 
@@ -201,13 +201,13 @@ stays admin-adjustable afterward via `set_pool_cap` (mirrors V8's mutable
 
 ## Error handling
 
-Every fallible public entrypoint returns `Result<T, PoolError>` — a typed
-`#[contracterror]` enum (`src/error.rs`, 73 variants) — instead of
+Every fallible public entrypoint returns `Result<T, PoolError>`, a typed
+`#[contracterror]` enum (`src/error.rs`, 73 variants), instead of
 `panic!`, the standard modern Soroban convention. Callers get a typed
 error code, not just an opaque host trap. Converted 2026-07-31 from an
 earlier all-`panic!` version: same validation conditions, same order,
 same business logic, verified via a full line-by-line diff review (zero
-logic drift) plus a fresh 485-mutant re-run (§3 of `TESTING.md`) — the
+logic drift) plus a fresh 485-mutant re-run (§3 of `TESTING.md`). The
 conversion changed the failure *signal* only. Test callers use the
 SDK-generated `try_X()` client methods; the plain `X()` methods still
 auto-unwrap/panic on `Err`, so no caller ergonomics changed either.
@@ -327,25 +327,25 @@ pub enum DataKey {
   independent reasons, none of them a contract defect, all worth stating
   plainly rather than leaving implied:
   - **No Halmos-equivalent exists for Soroban.** Certora Sunbeam (the real
-    ecosystem tool) is deliberately deferred to Tranche 3's SCF-funded audit.
+    Soroban tool) is deliberately deferred to Tranche 3's SCF-funded audit.
   - **Fuzzing has no Tranche 2 coverage.** Both targets compile clean but
     cannot execute on the current development host: libFuzzer aborts with
     `AddressSanitizer: SEGV in flockfile` inside its own startup print,
     before a single iteration, and this reproduces on an empty no-op target
-    (see `Dockerfile.fuzz`'s header). The last verified run — 2026-07-14,
-    4,270 runs, 0 crashes — predates every Tranche 2 change and the
+    (see `Dockerfile.fuzz`'s header). The last verified run, 2026-07-14,
+    4,270 runs, 0 crashes, predates every Tranche 2 change and the
     `__constructor` migration, and both targets were edited since. The run
     is pending on Linux via `Dockerfile.fuzz`.
   - **`cargo-scout-audit` cannot analyse the crate at all.** Scout 0.3.16
     builds against `wasm32-unknown-unknown`; `soroban-sdk` 27 refuses that
     target on Rust 1.82+ and requires `wasm32v1-none`, which this contract
     correctly uses. Scout prints a `0 Critical / 0 Medium / 0 Minor` summary
-    row **beside `build failed`** — that row is vacuous, no detector ran, and
+    row **beside `build failed`**. That row is vacuous, no detector ran, and
     it must not be read as a pass.
 
   What assurance does rest on: **238 unit tests** (all passing as of
   2026-08-17), the Tranche 1 coverage and mutation results recorded in
-  `TESTING.md` (97.47% line coverage, 100% of catchable mutants killed —
+  `TESTING.md` (97.47% line coverage, 100% of catchable mutants killed,
   measured against the T1 code, not re-measured for T2), and a manual
   adversarial review checklist. See `TESTING.md` for methodology.
 - **The contract is not upgradeable.** There is no upgrade authority
@@ -372,8 +372,8 @@ pub enum DataKey {
   - **Collusive drain, not unilateral theft.** Inflated claims that a
     colluding or credulous victim approves. Capped by the stress cap,
     solvency check, cooldown, vesting and outflow cap, and the victim burns
-    their entire lifetime points balance. Slow, observable and bounded —
-    materially better than a direct vault drain — but it is the real
+    their entire lifetime points balance. Slow, observable and bounded,
+    materially better than a direct vault drain, but it is the real
     exposure and it is architectural, not incidental.
 - **`cancel_pending_override`'s mechanics were re-verified against V8
   directly** (was previously an unconfirmed guess), see `src/claim.rs`
@@ -381,7 +381,7 @@ pub enum DataKey {
   fixed.
 - **A `submit_claim` rejected for capacity (`DailyStressCapExceeded` /
   `OracleDailyClaimLimitReached`) writes no state and has no automatic
-  retry today** — the underlying incident stays genuine and re-submittable
+  retry today**. The underlying incident stays genuine and re-submittable
   once capacity frees up, but nothing currently tracks or re-attempts it
   automatically. Planned for mainnet: an off-chain retry queue that pins
   the score/tier/entitlement at the moment of rejection (not re-derived on
@@ -390,7 +390,7 @@ pub enum DataKey {
 - **Liquidity rebalancing deliberately ships simple for testnet.**
   `claim_stream` payouts today rely on a manual admin `provide_liquidity`
   call if too much of the pool is deployed into the D2 yield vault when a
-  payout is due — testnet validates the core deposit→vault→yield mechanism
+  payout is due. Testnet validates the core deposit→vault→yield mechanism
   first, on the simpler path. Held off for mainnet: a permissionless
   `ensure_liquidity()` redesign where the contract computes its own
   shortfall and slippage bound (nothing caller-controlled), so rebalancing
@@ -402,7 +402,7 @@ pub enum DataKey {
   deploy → vault deploy → `set_vault` into one atomic, operator-triggered
   deploy script, so a new deployment self-sets-up its vault with no manual
   per-step judgment calls. Deliberately not baked into the pool contract's
-  own constructor — a cross-contract call to DeFindex's factory from
+  own constructor. A cross-contract call to DeFindex's factory from
   `initialize()` would couple the pool's own deployability to DeFindex's
   factory being live and correctly configured at that exact moment, and
   DeFindex is Stellar-specific, which would not generalize to a future
@@ -472,7 +472,7 @@ satisfied outright rather than by interpretation.
 
 The SAFU EVM contracts are **not** SCF-funded, live in a separate repository,
 and remain under BUSL-1.1. BUSL is source-available rather than open source,
-and was deliberately not carried across to this repository — visibility alone
+and was deliberately not carried across to this repository. Visibility alone
 does not make code open source, and prior to this licence being added the
 absence of any LICENSE file left the repository defaulting to
 all-rights-reserved despite being public.
