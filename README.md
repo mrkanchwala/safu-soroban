@@ -354,12 +354,26 @@ pub enum DataKey {
   the score/tier/entitlement at the moment of rejection (not re-derived on
   retry, so a later resubmission reflects the original assessment) and
   resubmits until it clears or the claim window runs out.
-- **Liquidity for `claim_stream` payouts currently depends on a manual
-  admin `provide_liquidity` call** if too much of the pool is deployed
-  into the D2 yield vault when a payout is due. Planned for mainnet: a
-  permissionless `ensure_liquidity()` redesign where the contract computes
-  its own shortfall and slippage bound (nothing caller-controlled), so
-  rebalancing doesn't require an admin to notice and act by hand.
+- **Liquidity rebalancing deliberately ships simple for testnet.**
+  `claim_stream` payouts today rely on a manual admin `provide_liquidity`
+  call if too much of the pool is deployed into the D2 yield vault when a
+  payout is due — testnet validates the core deposit→vault→yield mechanism
+  first, on the simpler path. Held off for mainnet: a permissionless
+  `ensure_liquidity()` redesign where the contract computes its own
+  shortfall and slippage bound (nothing caller-controlled), so rebalancing
+  doesn't require an admin to notice and act by hand.
+- **Vault deployment deliberately stays a manual operator step for
+  testnet.** Today: deploy a DeFindex vault via its factory, then
+  `set_vault`, run as a separate step right after pool deployment so each
+  piece is independently verifiable. Held off for mainnet: bundle pool
+  deploy → vault deploy → `set_vault` into one atomic, operator-triggered
+  deploy script, so a new deployment self-sets-up its vault with no manual
+  per-step judgment calls. Deliberately not baked into the pool contract's
+  own constructor — a cross-contract call to DeFindex's factory from
+  `initialize()` would couple the pool's own deployability to DeFindex's
+  factory being live and correctly configured at that exact moment, and
+  DeFindex is Stellar-specific, which would not generalize to a future
+  chain deployment.
 
 ## Blend/YieldBlox illustrative scenario (SCF #44 reviewer response)
 
