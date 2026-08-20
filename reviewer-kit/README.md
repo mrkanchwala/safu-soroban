@@ -100,10 +100,13 @@ by the contract's own Ed25519 check.
 
 `claim_stream` is **pull-based**, not a scheduled push:
 
-- Each call computes how much has vested since the cooldown ended — linear over 45 days — subtracts
+- Each call computes how much has vested since the cooldown ended (linear over 45 days), subtracts
   what has already been streamed, and pays the difference.
-- **Skipping days costs nothing.** Call it once a week or once a month; the next call pays the whole
-  accumulated amount. There is no forfeiture for not collecting.
+- **Collect at least once every 100 days.** The next call always pays the whole accumulated amount,
+  so collecting weekly and collecting monthly reach the same total. But if a claim goes 100 days with
+  no collection at all, anyone may call `expire_stale_claim` and the uncollected remainder returns to
+  the pool. Each collection resets that window. Vesting finishes at day 45, so a single collection any
+  time before the deadline gets you the full amount. `check` prints the exact deadline.
 - **Every call is its own transaction** with its own hash, independently verifiable.
 - A pool-wide **dynamic daily outflow cap** (5% / 3% / 1% of the pool by utilization) can cap what a
   single day's call pays out. It never reduces the total owed — it spreads it. `check` shows you the
@@ -142,5 +145,6 @@ most likely to see:
 | `NothingVested` (#63) | Cooldown passed, but nothing new has vested since your last call. Wait, then retry. |
 | `DailyOutflowCapReached` (#64) | The pool's daily payout ceiling is used up for today. Retry tomorrow. |
 | `ClaimFullyStreamed` (#60) | The entire entitlement has been paid out. |
+| `ClaimNotActive` (#59) | The claim is not Active. If `check` shows `Expired`, it went 100 days with no collection and was swept. |
 
 Any of these is the protocol behaving correctly, not a broken script.

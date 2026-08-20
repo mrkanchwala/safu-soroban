@@ -54,6 +54,10 @@ from stellar_sdk.soroban_rpc import GetTransactionStatus, SendTransactionStatus
 LEDGERS_PER_DAY = 17_280
 VESTING_LEDGERS = 45 * LEDGERS_PER_DAY
 COOLDOWN_LEDGERS = 7 * LEDGERS_PER_DAY
+# Rule B sweep: after this long with no claim_stream call, ANYONE may call
+# expire_stale_claim and the uncollected remainder returns to the pool.
+# Each collection resets the clock (contract sets last_collected_ledger = now).
+COLLECTION_INACTIVITY_LEDGERS = 100 * LEDGERS_PER_DAY
 BPS_DENOMINATOR = 10_000
 STROOPS_PER_XLM = 10_000_000
 SECONDS_PER_LEDGER = 5  # nominal Stellar close time, for date estimates only
@@ -70,6 +74,7 @@ CLAIM_STATUS = {
     4: "Reserved",
     5: "PendingTime",
     6: "AwaitingApproval",
+    7: "Expired",
 }
 
 TIER_NAMES = {1: "A", 2: "B", 3: "C"}
@@ -86,7 +91,9 @@ POOL_ERRORS = {
     53: ("NoSuchClaim", "No claim exists with this id on this contract."),
     59: (
         "ClaimNotActive",
-        "The claim is not in Active status, so it cannot stream.",
+        "The claim is not in Active status, so it cannot stream. If it shows Expired, "
+        "it went 100 days with no collection and was swept -- the uncollected remainder "
+        "returned to the pool.",
     ),
     60: (
         "ClaimFullyStreamed",
@@ -305,6 +312,21 @@ def cmd_check(cfg, args):
             log(f"  pool daily outflow ceiling: {xlm(cap['cap_today'])} "
                 f"({cap['bps'] / 100:.0f}% of {xlm(cap['cap_base'])})")
             log("  (pool-wide, shared across all claims; reduces a single call, never the total owed)")
+
+        # Rule B sweep -- shown whether or not cooldown has passed, because the
+        # clock starts at the cooldown end, not at the first collection.
+        deadline = claim["last_collected_ledger"] + COLLECTION_INACTIVITY_LEDGERS
+        left = deadline - now_ledger
+        log("")
+        log("COLLECTION DEADLINE (do not ignore)")
+        log(f"  collect before ledger : {deadline:,}  (~{ledger_to_estimated_utc(deadline, now_ledger):%Y-%m-%d})")
+        if left > 0:
+            log(f"  time left             : {left:,} ledgers (~{left / LEDGERS_PER_DAY:.1f} days)")
+            log("  If a claim goes 100 days with no collection, ANYONE may close it and the")
+            log("  uncollected remainder returns to the pool. Each collection resets this window.")
+            log("  Vesting finishes at day 45, so one collection before the deadline gets the full amount.")
+        else:
+            log("  PASSED - this claim can now be swept by anyone; the remainder may already be gone.")
             if v["claimable"] > 0:
                 log("")
                 log(f"  -> ready: python3 {os.path.basename(__file__)} stream --claim {c['label']}")
