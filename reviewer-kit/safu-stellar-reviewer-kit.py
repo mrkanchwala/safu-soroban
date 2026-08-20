@@ -115,6 +115,22 @@ POOL_ERRORS = {
         "The pool's dynamic daily outflow cap for today is already used up. "
         "This is a pool-wide anti-drain limit. Try again tomorrow.",
     ),
+    # The two below are NOT raised by claim_stream's own logic -- they come from
+    # guards it calls into, so they are easy to miss when mapping the function
+    # line by line. Both are reachable: `pause` is an admin action, and the
+    # liquidity check consults the yield vault, which holds real XLM.
+    80: (
+        "InsufficientLiquidity",
+        "The pool does not have enough liquid XLM on hand right now, because "
+        "some is deployed in the yield vault. The amount you are owed is "
+        "unchanged. Retry shortly; if it persists the operators need to return "
+        "funds from the vault.",
+    ),
+    93: (
+        "Paused",
+        "The pool is paused, which stops all payouts while it is in effect. "
+        "Your claim and everything vested are unaffected. Retry once it resumes.",
+    ),
 }
 
 
