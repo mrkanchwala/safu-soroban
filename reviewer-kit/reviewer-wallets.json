@@ -1,0 +1,40 @@
+{
+  "_readme": "TESTNET ONLY. Every key here is a synthetic Stellar testnet keypair generated for this demonstration and holds nothing of value. claim_stream is authorized by the STAKER key (claim.rs:793 claim.wallet.require_auth()); the beneficiary is verified against a hash committed at stake time and is where the payout lands.",
+  "contract_id": "CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB",
+  "network": "testnet",
+  "network_passphrase": "Test SDF Network ; September 2015",
+  "horizon_url": "https://horizon-testnet.stellar.org",
+  "soroban_rpc_url": "https://soroban-testnet.stellar.org",
+  "claims": [
+    {
+      "label": "low",
+      "claim_id": "ef87e4b28d36dc3585410963bc650ef53e3f82c791bfea823e1d39ca3dcd4bc2",
+      "staker_public": "GCLQHTVNECSDARDB2OE67N4LKQ6MY5BPZBDPRVHRHLKCBTVZ5QT6XRWO",
+      "staker_secret": "SBMNLMN5YJ5CO4IR2NFZKIEXF5YH4I3NYVY6UTCKMCQFGPPMONTHMSQQ",
+      "beneficiary_public": "GA4S5ZE66HW3R2ETBCPR2T27ENE75ZP54RHWF2GCYBGKOCJMKQH5DFNJ",
+      "beneficiary_secret": "SCSF7MT676I4UM5763XH3PCSRK5PNEWTXPB3Q2KJTX6Q4ZV3NV6WVMJ7",
+      "stake_xlm": 300,
+      "entitlement_xlm": 1500,
+      "cooldown_ends_ledger": 4362066,
+      "vesting_ends_ledger": 5139666,
+      "stake_tx": "3a4ebcf4e41fa403030a4988a81a49f418b0fa0a0ad67342253f64468020a7b6",
+      "drain_tx": "3a07d3086a5b78abd3a252be4432419184d031406c692df9ac82f3413e2445ba",
+      "claim_submit_tx": "d13b0cc9dd9352e89c4f23694330f5625ba950ce356e8a3f3c9a33d9e1e5a70e"
+    },
+    {
+      "label": "mid",
+      "claim_id": "22878de6a3ca83cd9574cdc81abcd398c458d572d15e45815a806fb4358a550a",
+      "staker_public": "GA7PJJX2HB27PGF5TCVOJFUKLHCCEMMNYWG65ENLYHV6KWNDFJL4JPDR",
+      "staker_secret": "SC3AZONG6ESJZWJ6KZXMOICBHXGQL2W44JSIKFOEA32IPRWO5XUE26MU",
+      "beneficiary_public": "GDSOF44JKGPCDVLQVQ3AHNKYUN46JF2RM2CAYUUPVFV5WIPZUM5SUDF7",
+      "beneficiary_secret": "SCK75PDPWIRC72CLQI6SI2BY26TAKLL2UHPSJZLL7RXY2DD7DXLF6UXC",
+      "stake_xlm": 3800,
+      "entitlement_xlm": 19000,
+      "cooldown_ends_ledger": 4362068,
+      "vesting_ends_ledger": 5139668,
+      "stake_tx": "776a3ea4951fd95f9018a6cbfd356cbcdaed3356f39f50252e05421a2f93c58f",
+      "drain_tx": "57f9447c729122baf75f35e8d0490ff66015b186ecb9f0f70082f0de9105b551",
+      "claim_submit_tx": "44dbd8b6f381816e21a6111267d86fa818d37132281820c7a80cdd27202bd453"
+    }
+  ]
+}
