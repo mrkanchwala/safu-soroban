@@ -211,7 +211,7 @@ all 5 bug fixes held up clean under fuzzing, not just the unit-test suite.
 
 Soroban has no Halmos-equivalent symbolic verifier (Kani was researched
 and ruled infeasible for `no_std`/FFI-heavy `soroban-sdk` code; Certora
-Sunbeam is the real ecosystem tool, deliberately deferred to Tranche 3's
+Sunbeam is the real Soroban tool, deliberately deferred to Tranche 3's
 SCF-funded audit rather than self-run now). Fuzzing at this depth is the
 compensating control.
 
