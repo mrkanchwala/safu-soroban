@@ -398,6 +398,24 @@ pool/participant never becomes a claim at all, no `submit_claim` call,
 the deposit stays fully claim-eligible, nothing is ever earmarked for
 payout. The point is discernment, not "everything pays out."
 
+## Licence
+
+**Apache-2.0.** Full text in [`LICENSE`](LICENSE); attribution in
+[`NOTICE`](NOTICE); declared as `license = "Apache-2.0"` in the workspace
+`Cargo.toml` and inherited by `contracts/protection-pool`.
+
+Chosen 2026-08-19 for Stellar Community Fund award #44, whose Build Award
+submission criteria require "a clear plan to open-source" any smart contracts
+a project includes. Apache-2.0 is OSI-approved, so that requirement is
+satisfied outright rather than by interpretation.
+
+The SAFU EVM contracts are **not** SCF-funded, live in a separate repository,
+and remain under BUSL-1.1. BUSL is source-available rather than open source,
+and was deliberately not carried across to this repository — visibility alone
+does not make code open source, and prior to this licence being added the
+absence of any LICENSE file left the repository defaulting to
+all-rights-reserved despite being public.
+
 ## Full technical reference
 
 The complete V8→Soroban mechanics map, SDK reference, vulnerability

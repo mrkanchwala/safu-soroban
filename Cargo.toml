@@ -2,6 +2,16 @@
 resolver = "2"
 members = ["contracts/protection-pool"]
 
+# Apache-2.0 chosen 2026-08-19 for SCF #44. The Build Award submission criteria
+# require "a clear plan to open-source" any smart contracts; Apache-2.0 is
+# OSI-approved, so the requirement is met outright rather than by argument.
+# BUSL-1.1 (used by the non-SCF-funded EVM contracts) is source-available, NOT
+# open source, and was deliberately not carried across. Both the LICENSE file
+# and this field are needed: the file is what a reader sees, this field is what
+# `cargo deny`, crates.io metadata, and the website's contract panel read.
+[workspace.package]
+license = "Apache-2.0"
+
 [workspace.dependencies]
 # Verified 2026-07-14 via `cargo check`: crates.io's actual latest is v27.0.0 (v22.0.0
 # placeholder resolved to a real but 5-major-version-old v22.0.11 and pulled a stale API

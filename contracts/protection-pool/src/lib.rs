@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! SAFU ProtectionPool — Soroban port of `SAFUPoolV8.sol`.
 //!
 //! **Tranche 1 (MVP):** staking, points/tier/claim mechanics, payout

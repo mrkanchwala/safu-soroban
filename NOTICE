@@ -1,0 +1,24 @@
+SAFU ProtectionPool — Soroban
+Copyright 2026 Murtaza Kanchwala
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+---
+
+Scope note: this licence covers the Soroban contract source in this
+repository (`contracts/protection-pool`), developed under Stellar
+Community Fund award #44. Copyright is held personally by Murtaza
+Kanchwala, matching the name the SCF award is registered under — it is
+deliberately NOT attributed to MKD Global LLC, which is not a party to
+the award. The SAFU EVM contracts, which are not SCF-funded, live in a
+separate repository under their own terms.
