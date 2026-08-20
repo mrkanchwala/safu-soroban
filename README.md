@@ -14,34 +14,67 @@ transaction qualifies as a wallet drain, is a separate, proprietary asset.
 Its code, logic, and signal weights are not included, referenced, or
 reproduced anywhere in this repository.
 
-**Status:** core mechanics complete and tested (184 unit tests, 97.47%
-line coverage, 100% of catchable mutants killed — re-confirmed
-2026-07-31 with a fresh 485-mutant run, see `TESTING.md` for the full
-methodology), compiles to WASM
-(`cargo build --release --target wasm32v1-none`), `/audit-chain` +
+**Status:** Tranche 2 code merged, tested and live on Stellar testnet.
+238 unit tests pass. Coverage and mutation figures (97.47% line coverage,
+100% of catchable mutants killed, fresh 485-mutant run) were measured
+2026-07-31 against the Tranche 1 code and have not been re-measured since
+the Tranche 2 merge; see `TESTING.md` for the methodology. Compiles to
+WASM (`cargo build --release --target wasm32v1-none`), `/audit-chain` +
 `/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM, see `audits/`),
-**deployed to Stellar testnet**, contract ID
-`CCQT2VRONZTE5ODBNM3XAQWUPQRLKGMU4MMLA2JK6HJHJMK34Q7ZFTGJ` (see
-"Testnet deployment" below). **Error handling:** every public entrypoint
+fuzzed 151,398 runs with zero crashes. **Live contract ID:**
+`CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB` (see
+"Testnet deployment (Tranche 2 — current)" below). **Error handling:** every public entrypoint
 returns `Result<T, PoolError>` via a typed `#[contracterror]` enum
 (`src/error.rs`) rather than raw panics — converted 2026-07-31, see
 "Error handling" below.
 
-## Testnet deployment
+## Testnet deployment (Tranche 2 — current)
 
-Deployed and initialized on Stellar testnet, 2026-07-29:
+**This is the live contract.** Deployed and initialized on Stellar testnet
+2026-08-20, carrying the merged Tranche 2 code: on-chain Ed25519 oracle
+verification (D1), the DeFindex yield vault integration (D2), and the audit
+fixes from the combined `/audit-chain` + `/cso` pass.
+
+- **Contract ID:** `CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB`
+  ([Stellar Expert](https://stellar.expert/explorer/testnet/contract/CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB))
+- **Deploy tx:** [`e146fed40e89...`](https://stellar.expert/explorer/testnet/tx/e146fed40e894d77ba89a9febc6cbb1e0fd6ce4092363c3df2055ea00b4b3d2a)
+- **Initialize tx:** [`a10ff8fffcdb...`](https://stellar.expert/explorer/testnet/tx/a10ff8fffcdb618398ea2e946891ed52bf8c0503a5632130d466c9973c2a36d3)
+- **WASM hash:** `62ca8a24acf4fdb262ae479587924fb36bf5604421b895a0b8b7accfb5eaed3a`
+- **Yield vault (D2):** `CCSS44GDUI4TDTLX2XAGPWVVDOZPBTGSFLIBT6DXYLGU74ACF76EE5HZ`,
+  SAFU's own DeFindex vault with `VaultFee = 0`, wired via `set_vault`
+- **Pool cap:** 600,000 XLM (`6_000_000_000_000` stroops), unchanged from
+  Tranche 1 (see "Deploy-time arguments" below).
+- **XLM asset:** native testnet SAC
+  `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`
+- **Oracle:** an AWS KMS-held Ed25519 key. The contract verifies its
+  signature on-chain; the private key exists only inside KMS and every
+  signing call is logged. Admin, co-signer and treasury are fresh testnet
+  identities. Public addresses only, no private keys are shared here or
+  anywhere in this repository.
+
+Unlike the Tranche 1 deployment below, this pool carries **real activity**: a
+staked fleet, approved claims, and a live yield-vault position, all
+independently checkable on Stellar Expert.
+
+### Verify a payout yourself
+
+Claims reach `Active` and then wait out a contract-enforced 7-day cooldown
+before any XLM can move. That cooldown is deliberately **not** shortened for
+demonstration purposes, so rather than asking anyone to take a recording on
+faith, [`reviewer-kit/`](reviewer-kit/) contains a script and the testnet keys
+to trigger and verify a real payout directly against this contract, on your own
+schedule. See [`reviewer-kit/README.md`](reviewer-kit/README.md).
+
+## Testnet deployment (Tranche 1 — superseded)
+
+Kept for the record. This was the Tranche 1 deliverable, deployed and
+initialized 2026-07-29, and it is **no longer the active contract** — it does
+not contain the Tranche 2 code and carries none of the Tranche 2 activity.
 
 - **Contract ID:** `CCQT2VRONZTE5ODBNM3XAQWUPQRLKGMU4MMLA2JK6HJHJMK34Q7ZFTGJ`
   ([Stellar Expert](https://stellar.expert/explorer/testnet/contract/CCQT2VRONZTE5ODBNM3XAQWUPQRLKGMU4MMLA2JK6HJHJMK34Q7ZFTGJ))
 - **Deploy tx:** [`eec5cadee7b7...`](https://stellar.expert/explorer/testnet/tx/eec5cadee7b7f836479c0131a1e666fd6f2a07affe835b5c6b9b97e7fe0822dd)
 - **Initialize tx:** [`7c37662f87df...`](https://stellar.expert/explorer/testnet/tx/7c37662f87df89397e66927fd4e4355cca2eb9aa27d9f870b0ed08f0b6bd82b6)
-- **Pool cap:** 600,000 XLM (`6_000_000_000_000` stroops), the intended
-  Tranche 1 deploy value (see "Deploy-time arguments" below).
-- **XLM asset:** native testnet SAC
-  `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`
-- **Admin / oracle / co-signer:** fresh testnet identities generated for
-  this deployment. Public addresses only, no private keys are shared
-  here or anywhere in this repository.
 
 Verified live immediately after initialization: `get_total_staked()`
 returns `0`, `is_paused()` returns `false`.
