@@ -346,6 +346,20 @@ pub enum DataKey {
   directly** (was previously an unconfirmed guess), see `src/claim.rs`
   module doc comment for the full account of what was wrong and what was
   fixed.
+- **A `submit_claim` rejected for capacity (`DailyStressCapExceeded` /
+  `OracleDailyClaimLimitReached`) writes no state and has no automatic
+  retry today** — the underlying incident stays genuine and re-submittable
+  once capacity frees up, but nothing currently tracks or re-attempts it
+  automatically. Planned for mainnet: an off-chain retry queue that pins
+  the score/tier/entitlement at the moment of rejection (not re-derived on
+  retry, so a later resubmission reflects the original assessment) and
+  resubmits until it clears or the claim window runs out.
+- **Liquidity for `claim_stream` payouts currently depends on a manual
+  admin `provide_liquidity` call** if too much of the pool is deployed
+  into the D2 yield vault when a payout is due. Planned for mainnet: a
+  permissionless `ensure_liquidity()` redesign where the contract computes
+  its own shortfall and slippage bound (nothing caller-controlled), so
+  rebalancing doesn't require an admin to notice and act by hand.
 
 ## Blend/YieldBlox illustrative scenario (SCF #44 reviewer response)
 
