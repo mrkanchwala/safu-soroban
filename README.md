@@ -5,10 +5,12 @@
 Soroban (Stellar smart contracts, Rust → WASM) port of `SAFUPoolV8.sol`, the
 live Ethereum mainnet contract at
 [`0xa170f0937DEc353C1806eaC0c3d559524d458641`](https://etherscan.io/address/0xa170f0937DEc353C1806eaC0c3d559524d458641).
-Built for SCF #44 Tranche 1: the core pool/points/tier/claim/payout-stream
-mechanics, ported wholesale from V8. Yield deployment (Lido wstETH on V8,
-DeFindex/Blend planned for Tranche 2) is deliberately excluded from this
-scope.
+Built for SCF #44. Tranche 1 delivered the core
+pool/points/tier/claim/payout-stream mechanics, ported wholesale from V8.
+**Tranche 2 is merged and live on testnet**, adding on-chain Ed25519 oracle
+verification and the yield layer: idle pool capital is deployed into Blend
+via a DeFindex vault (V8's equivalent is Lido wstETH), wired to the live
+contract through `set_vault`.
 
 **Scope note:** this repo is the on-chain `ProtectionPool` contract only.
 SAFU's fraud-detection scanner, the system that decides whether a given
@@ -143,8 +145,8 @@ cap math + a token transfer) in one call.
 
 ```bash
 cd contracts/protection-pool
-cargo +nightly fuzz run fuzz_solvency -- -max_total_time=60
-cargo +nightly fuzz run fuzz_override -- -max_total_time=60
+cargo +nightly fuzz run fuzz_solvency -- -max_total_time=300
+cargo +nightly fuzz run fuzz_override -- -max_total_time=300
 ```
 
 Two targets: `fuzz_solvency` (the core invariant) and `fuzz_override`
@@ -157,11 +159,18 @@ unrelated to this contract, reproduced independently on 2026-07-14 and
 again on 2026-07-22. Two working options: `Dockerfile.fuzz`
 (`docker build -f Dockerfile.fuzz -t safu-fuzz . && docker run --rm
 safu-fuzz`), or run natively on any Linux host (no Docker needed there,
-since the incompatibility is macOS-specific; this is how the 2026-07-22 re-run
-against the updated mechanism was done, via the team's Linux test VPS).
-Combined results across all environments and both targets: **133,672
-runs, zero crashes, zero solvency-invariant violations.** Full
-breakdown: `TESTING.md` §4.
+since the incompatibility is macOS-specific).
+
+**Current Tranche 2 result — 2026-08-17, Docker on the team's Linux
+host, run against the exact commit deployed to testnet:**
+`fuzz_solvency` 71,034 runs / `fuzz_override` 80,364 runs = **151,398
+fuzzed action-sequences, zero crashes, zero artifacts, zero
+solvency-invariant violations.** This is the figure quoted at the top of
+this README and in the Tranche 2 submission.
+
+Three earlier campaigns ran against pre-Tranche-2 code (2026-07-14,
+07-15 and 07-22, **133,672 runs**, also all clean); they are kept in
+`TESTING.md` §4 as history rather than as the current claim.
 
 ### Deploy-time arguments
 
@@ -224,7 +233,7 @@ auto-unwrap/panic on `Err`, so no caller ergonomics changed either.
 | `src/admin.rs` | Init, oracle/coSigner/admin rotation, pause, suspend |
 | `src/stake.rs` | Stake, withdraw, `setBeneficiary`, `emergencyExit`, points computation |
 | `src/claim.rs` | Full claim lifecycle (submit → activate → stream → complete/cancel) + the 2-of-2 admin+coSigner override escape hatch |
-| `src/test/` | Unit tests, split by mechanic (`admin_tests`, `stake_tests`, `claim_tests`, `override_tests`, `solvency_tests`) |
+| `src/test/` | Unit tests, split by mechanic (`admin_tests`, `stake_tests`, `claim_tests`, `override_tests`, `solvency_tests`), plus `profiling_tests` (resource-cost budgets) and `blend_scenario_tests` (the SCF reviewer-response scenario) |
 | `fuzz/` | `cargo-fuzz` targets for the solvency invariant and claim state machine (Soroban has no Halmos-equivalent symbolic verifier; this is the compensating control) |
 
 ## Storage model
@@ -325,19 +334,12 @@ pub enum DataKey {
   description). This section is the disclosure: SCF reviewed the Tranche 1
   deliverables against this repository, returned no comments, and approved
   the tranche on 2026-08-08.
-- **Automated analysis of this contract is currently zero.** Three
-  independent reasons, none of them a contract defect, all worth stating
-  plainly rather than leaving implied:
+- **Two static-analysis tools that would normally apply here do not.**
+  Neither is a contract defect, and both are worth stating plainly rather
+  than leaving implied. Fuzzing is deliberately **not** in this list: it
+  covers the current Tranche 2 code, see the assurance paragraph below.
   - **No Halmos-equivalent exists for Soroban.** Certora Sunbeam (the real
     Soroban tool) is deliberately deferred to Tranche 3's SCF-funded audit.
-  - **Fuzzing has no Tranche 2 coverage.** Both targets compile clean but
-    cannot execute on the current development host: libFuzzer aborts with
-    `AddressSanitizer: SEGV in flockfile` inside its own startup print,
-    before a single iteration, and this reproduces on an empty no-op target
-    (see `Dockerfile.fuzz`'s header). The last verified run, 2026-07-14,
-    4,270 runs, 0 crashes, predates every Tranche 2 change and the
-    `__constructor` migration, and both targets were edited since. The run
-    is pending on Linux via `Dockerfile.fuzz`.
   - **`cargo-scout-audit` cannot analyse the crate at all.** Scout 0.3.16
     builds against `wasm32-unknown-unknown`; `soroban-sdk` 27 refuses that
     target on Rust 1.82+ and requires `wasm32v1-none`, which this contract
@@ -346,10 +348,13 @@ pub enum DataKey {
     it must not be read as a pass.
 
   What assurance does rest on: **238 unit tests** (all passing as of
-  2026-08-17), the Tranche 1 coverage and mutation results recorded in
-  `TESTING.md` (97.47% line coverage, 100% of catchable mutants killed,
-  measured against the T1 code, not re-measured for T2), and a manual
-  adversarial review checklist. See `TESTING.md` for methodology.
+  2026-08-17), **151,398 fuzzed action-sequences against this exact
+  Tranche 2 code** (2026-08-17, both targets, zero crashes and zero
+  solvency-invariant violations, see "Fuzzing" above), the Tranche 1
+  coverage and mutation results recorded in `TESTING.md` (97.47% line
+  coverage, 100% of catchable mutants killed, measured against the T1
+  code, not re-measured for T2), and a manual adversarial review
+  checklist. See `TESTING.md` for methodology.
 - **The contract is not upgradeable.** There is no upgrade authority
   anywhere in it. This is deliberate and is a real positive against
   OWASP SC10, but the tradeoff is explicit: there is no post-deployment

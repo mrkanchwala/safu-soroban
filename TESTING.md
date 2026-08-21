@@ -18,10 +18,17 @@ and the 7a audit fixes. Concretely, since the numbers below were last measured:
 - **`initialize` no longer exists** — configuration moved to `__constructor`
   (7a audit) to close the deploy→init front-running window. See README's
   "Deploy-time arguments"
-- **Fuzzing (§3) has NOT been re-run against T2 code.** The last verified run
-  (2026-07-14: 4,270 runs, 0 crashes) predates D1/D2/7c and the constructor
-  migration. Native runs abort in libFuzzer's startup print on macOS arm64
-  (see `Dockerfile.fuzz`); re-run in that container before D4
+- **Fuzzing (§4) HAS been re-run against T2 code — 2026-08-17.** Both targets,
+  in Docker on the team's Linux host, against the exact commit deployed to
+  testnet: `fuzz_solvency` 71,034 runs / `fuzz_override` 80,364 runs =
+  **151,398 runs, zero crashes, zero artifacts.** Re-verified 2026-08-20
+  against the then-current `main`: identical commit, and no changes to
+  `contracts/protection-pool/src/` or `fuzz/` since, so the result still holds
+  for the deployed code.
+  *(This bullet previously asserted the opposite and cited "2026-07-14: 4,270
+  runs". That figure is the container smoke test in `Dockerfile.fuzz`'s own
+  header, not a campaign, and the section reference was wrong too — fuzzing is
+  §4, not §3. Corrected 2026-08-21.)*
 
 **Updated 2026-07-31** — converted the contract from `panic!("SAFU: ...")`
 string-based error handling to a typed `#[contracterror] PoolError` enum
@@ -172,7 +179,7 @@ re-verification. **Result: every one of the 485 mutants that could
 possibly be caught, was — no regression from the error-handling
 refactor.**
 
-## 4. Fuzzing — 2 targets, 2 independent environments, 53,588+37,943 runs
+## 4. Fuzzing — 2 targets, 4 campaigns, 285,070 runs, zero crashes ever
 
 ```bash
 cd contracts/protection-pool
@@ -196,8 +203,9 @@ SubmitClaim/ClaimStream/CancelClaim/AdvanceDays-style action sequences:
   — the macOS incompatibility doesn't exist on Linux): `fuzz_solvency`
   21,692 runs / `fuzz_override` 31,896 runs.
 
-**Combined: 114,344 fuzzed action-sequences across both targets and both
-environments. Zero crashes, zero solvency-invariant violations, ever.**
+**Subtotal for the two July campaigns: 114,344 fuzzed action-sequences
+across both targets and both environments. Zero crashes, zero
+solvency-invariant violations.**
 
 **2026-07-22, third data point — same macOS ASan/libFuzzer host
 incompatibility recurred** (confirmed independently again: both targets
@@ -208,6 +216,22 @@ re-running natively on the Linux VPS test rig against the updated
 11,091 runs, 90s each. **19,328 additional runs, zero crashes,
 zero solvency-invariant violations** — the new approval/expiry logic and
 all 5 bug fixes held up clean under fuzzing, not just the unit-test suite.
+
+**2026-08-17, fourth campaign — the current Tranche 2 result, and the one
+the Tranche 2 submission quotes.** Run in Docker on the team's Linux host
+against the exact commit deployed to testnet (`16b4d118`), both targets at
+601s each: `fuzz_solvency` **71,034 runs** / `fuzz_override` **80,364
+runs** = **151,398 fuzzed action-sequences, zero crashes, zero artifacts,
+zero solvency-invariant violations.** Re-verified 2026-08-20 against the
+then-current `main`: identical commit, with no changes to
+`contracts/protection-pool/src/` or `fuzz/` since, so this result stands
+for the deployed contract rather than for a superseded build.
+
+**All four campaigns combined: 285,070 fuzzed action-sequences. Zero
+crashes, zero solvency-invariant violations, ever.** When a single figure
+is quoted for the current code, it is the 151,398 above, because the three
+July campaigns predate the D1/D2/7a changes and the `__constructor`
+migration.
 
 Soroban has no Halmos-equivalent symbolic verifier (Kani was researched
 and ruled infeasible for `no_std`/FFI-heavy `soroban-sdk` code; Certora
