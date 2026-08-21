@@ -1,5 +1,7 @@
 # SAFU ProtectionPool: Soroban
 
+[![CI](https://github.com/mrkanchwala/safu-soroban/actions/workflows/ci.yml/badge.svg)](https://github.com/mrkanchwala/safu-soroban/actions/workflows/ci.yml)
+
 Soroban (Stellar smart contracts, Rust → WASM) port of `SAFUPoolV8.sol`, the
 live Ethereum mainnet contract at
 [`0xa170f0937DEc353C1806eaC0c3d559524d458641`](https://etherscan.io/address/0xa170f0937DEc353C1806eaC0c3d559524d458641).
