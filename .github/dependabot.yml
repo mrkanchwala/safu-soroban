@@ -1,0 +1,28 @@
+# Dependabot — added 2026-08-21 alongside CI.
+#
+#   cargo          the contract's own tree. soroban-sdk is pinned to 27.0.0 in
+#                  Cargo.toml for a reason recorded there (a placeholder once
+#                  resolved five majors back and pulled a stale API), so treat
+#                  any SDK bump as a real review, not a rubber stamp.
+#   github-actions the actions ci.yml uses. Those are pinned to major tags,
+#                  which still float within the major; this surfaces the moves.
+#
+# PR limits are deliberately low so a noisy week cannot bury a repo that is
+# currently under grant review.
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"

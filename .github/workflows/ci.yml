@@ -1,0 +1,54 @@
+# CI — added 2026-08-21.
+#
+# Purpose is evidential, not just hygienic. The README tells SCF reviewers that
+# 238 tests pass and that `cargo deny` is clean; before this workflow existed a
+# reviewer had to take both on trust, or clone and build the repo themselves.
+# This makes each claim a link they can click.
+#
+# Runs on every branch deliberately, not just `main`, so a change can be proven
+# green on a side branch before it ever reaches the branch reviewers read.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Printed so a red run can be told apart from a toolchain drift at a
+      # glance. rustup reads rust-toolchain.toml, so this should always say
+      # the pinned version.
+      - name: Toolchain in use
+        run: rustc --version && cargo --version
+
+      # --locked fails if Cargo.lock is stale against Cargo.toml, rather than
+      # silently resolving something newer than what was tested. Verified
+      # locally before this workflow was committed.
+      - name: Run the workspace suite
+        run: cargo test --workspace --locked
+
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Uses the committed deny.toml, whose allowlists were derived from the
+      # real dependency tree rather than a template. Do not widen them here to
+      # make a failure disappear; fix it in deny.toml with a written rationale,
+      # the way RUSTSEC-2024-0436 was handled.
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check

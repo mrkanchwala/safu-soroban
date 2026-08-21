@@ -1,0 +1,11 @@
+# Pinned 2026-08-21, when CI was added.
+#
+# Without a pin, CI takes whatever rustc is newest on the runner, so an upstream
+# toolchain release could redden the badge without a line of our code changing.
+# That badge is read by SCF reviewers during a live grant review, and a false
+# red is worse than no badge at all.
+#
+# 1.96.0 is the toolchain the 238 tests were verified green against. Bump it
+# deliberately, after re-running the suite, never incidentally.
+[toolchain]
+channel = "1.96.0"
