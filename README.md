@@ -390,10 +390,13 @@ pub enum DataKey {
   `OracleDailyClaimLimitReached`) writes no state and has no automatic
   retry today**. The underlying incident stays genuine and re-submittable
   once capacity frees up, but nothing currently tracks or re-attempts it
-  automatically. Planned for mainnet: an off-chain retry queue that pins
-  the score/tier/entitlement at the moment of rejection (not re-derived on
-  retry, so a later resubmission reflects the original assessment) and
-  resubmits until it clears or the claim window runs out.
+  automatically. Planned for mainnet: **on-chain** queue state (not
+  off-chain) that pins the score/tier/entitlement at the moment of
+  rejection (not re-derived on retry, so a later resubmission reflects the
+  original assessment), publicly readable the same way every other claim
+  field already is, with a permissionless function anyone can call to
+  re-admit it once capacity frees up, or expire it if the claim window
+  runs out first.
 - **Liquidity rebalancing deliberately ships simple for testnet.**
   `claim_stream` payouts today rely on a manual admin `provide_liquidity`
   call if too much of the pool is deployed into the D2 yield vault when a
