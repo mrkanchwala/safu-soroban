@@ -19,12 +19,14 @@ Its code, logic, and signal weights are not included, referenced, or
 reproduced anywhere in this repository.
 
 **Status:** Tranche 2 code merged, tested and live on Stellar testnet.
-238 unit tests pass. Coverage and mutation figures (97.47% line coverage,
-100% of catchable mutants killed, fresh 485-mutant run) were measured
-2026-07-31 against the Tranche 1 code and have not been re-measured since
-the Tranche 2 merge; see `TESTING.md` for the methodology. Compiles to
-WASM (`cargo build --release --target wasm32v1-none`), `/audit-chain` +
-`/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM, see `audits/`),
+250 unit tests pass. Mutation testing has been run against the Tranche 2
+diff: 400 mutants, 389 caught, 10 unviable, 1 documented survivor.
+Coverage 98.40% line / 98.11% region / 97.28% function. Both re-measured
+2026-08-25 against the current tree; see `TESTING.md` for the methodology
+and for the survivor. Compiles to WASM via
+`stellar contract build --optimize`, `/audit-chain` +
+`/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM — see §7 of
+`TESTING.md`),
 fuzzed 151,398 runs with zero crashes. **Live contract ID:**
 `CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB` (see
 "Testnet deployment (Tranche 2, current)" below). **Error handling:** every public entrypoint
@@ -102,10 +104,17 @@ is where the integration with an existing Stellar DeFi protocol happens.
 
 ```bash
 cargo check --package protection-pool          # fast type/logic check
-cargo test --package protection-pool           # 238 unit tests
-cargo build --package protection-pool --release --target wasm32v1-none
-stellar contract build --optimize              # or: stellar contract optimize --wasm <path>
+cargo test --package protection-pool           # 250 unit tests
+cargo build --package protection-pool --release --target wasm32v1-none   # plain, unoptimized WASM
+stellar contract build --optimize              # optimized — this is what was deployed
 ```
+
+The **WASM hash published under "Testnet deployment" below is produced by
+`stellar contract build --optimize`**, not by the plain `cargo build` line
+above — the two emit different artifacts, and only the optimized one
+matches the deployed contract. Verified 2026-08-25 by rebuilding from the
+Tranche 2 submission tag and from the current tree; both hash to
+`62ca8a24acf4fdb262ae479587924fb36bf5604421b895a0b8b7accfb5eaed3a`.
 
 Full testing methodology (coverage, mutation testing, fuzzing, static
 analysis, manual audit passes, security reviews): see `TESTING.md`.
@@ -347,14 +356,14 @@ pub enum DataKey {
     row **beside `build failed`**. That row is vacuous, no detector ran, and
     it must not be read as a pass.
 
-  What assurance does rest on: **238 unit tests** (all passing as of
-  2026-08-17), **151,398 fuzzed action-sequences against this exact
+  What assurance does rest on: **250 unit tests** (all passing as of
+  2026-08-25), **151,398 fuzzed action-sequences against this exact
   Tranche 2 code** (2026-08-17, both targets, zero crashes and zero
-  solvency-invariant violations, see "Fuzzing" above), the Tranche 1
-  coverage and mutation results recorded in `TESTING.md` (97.47% line
-  coverage, 100% of catchable mutants killed, measured against the T1
-  code, not re-measured for T2), and a manual adversarial review
-  checklist. See `TESTING.md` for methodology.
+  solvency-invariant violations, see "Fuzzing" above), the coverage and
+  mutation results recorded in `TESTING.md` (98.40% line coverage;
+  mutation run against the Tranche 2 diff 2026-08-25 — 400 mutants, 389
+  caught, 10 unviable, 1 documented survivor), and a manual adversarial
+  review checklist. See `TESTING.md` for methodology.
 - **The contract is not upgradeable.** There is no upgrade authority
   anywhere in it. This is deliberate and is a real positive against
   OWASP SC10, but the tradeoff is explicit: there is no post-deployment

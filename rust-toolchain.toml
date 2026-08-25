@@ -5,7 +5,8 @@
 # That badge is read by SCF reviewers during a live grant review, and a false
 # red is worse than no badge at all.
 #
-# 1.96.0 is the toolchain the 238 tests were verified green against. Bump it
+# 1.96.0 is the toolchain the test suite was verified green against (250
+# tests as of 2026-08-25; 238 when this pin was added). Bump it
 # deliberately, after re-running the suite, never incidentally.
 [toolchain]
 channel = "1.96.0"

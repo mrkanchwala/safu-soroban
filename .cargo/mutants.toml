@@ -2,17 +2,31 @@
 #
 # Added 2026-07-15 after the first full mutation run (464 mutants, 60
 # missed). 51 of the 60 are killed by targeted tests in
-# src/test/mutation_gap_tests.rs. The 9 excluded below are PROVABLY
-# EQUIVALENT: the mutated code has no observable behavioral difference
-# from the original under any reachable contract state. Each exclusion
-# carries its justification — do not add entries here without one.
+# src/test/mutation_gap_tests.rs; the Tranche 2 campaign (2026-08-25) added
+# 3 more, closed by src/test/t2_mutation_gap_tests.rs. The 12 excluded below
+# are PROVABLY EQUIVALENT: the mutated code has no observable behavioral
+# difference from the original under any reachable contract state. Each
+# exclusion carries its justification — do not add entries here without one.
 #
-# NOTE: patterns match cargo-mutants' mutant descriptions. They are
-# line-number-free on purpose (source-line drift safe) but therefore
-# scoped by function — if a function later gains a NEW mutation site
-# matching one of these patterns that is NOT equivalent, it would be
-# wrongly excluded. Re-review this file whenever the named functions
-# change.
+# NOTE: patterns match cargo-mutants' mutant descriptions. MOST are
+# line-number-free (source-line drift safe) but therefore scoped by function
+# — if a function later gains a NEW mutation site matching one of these
+# patterns that is NOT equivalent, it would be wrongly excluded. That is not
+# hypothetical: it happened. `"replace > with >= in withdraw"` silently
+# swallowed vault.rs::withdraw_yield's balance gates from the moment Tranche
+# 2 added them until 2026-08-25, because the pattern is a SUBSTRING match and
+# `withdraw_yield` contains `withdraw`.
+#
+# So three entries are deliberately ANCHORED rather than function-scoped —
+# `stake.rs:137`, `vault.rs:584`, `vault.rs:590`. Anchors drift when lines
+# shift and must be re-checked, but for those three it is the only correct
+# option: a function-scoped pattern would swallow a sibling mutant that is a
+# REAL gap. Prefer a file anchor (`vault\.rs:.*`) over a line anchor where
+# the function has only one matching site.
+#
+# Re-review this file whenever the named functions change, and after any
+# campaign, diff the mutant list with and without it — the delta is the only
+# reliable way to see what it is actually suppressing.
 
 exclude_re = [
     # lib.rs get_points_balance / is_eligible / is_claim_eligible:
@@ -34,7 +48,16 @@ exclude_re = [
     # unwrap_or(0) for an absent entry, so entry-existence itself is
     # not observable either).
     "replace > with >= in activate_claim",
-    "replace > with >= in withdraw",
+    # RE-ANCHORED 2026-08-25 — this pattern is a SUBSTRING match, and it was
+    # silently swallowing vault.rs::withdraw_yield's two balance-gate mutants
+    # (:628 and :631), a T2 function this justification was never written
+    # about. Those gates are the double gate that stops treasury withdrawals
+    # from eating staker principal, and they are NOT equivalent: the original
+    # ALLOWS `amount == balance` (withdraw exactly the full yield) where the
+    # `>=` mutant rejects it — directly observable, killable by one test.
+    # Anchored to stake.rs so it cannot leak again. File-level, not line-level,
+    # deliberately: line anchors drift (see the stake.rs:137 re-anchor above).
+    "stake\\.rs:.*replace > with >= in withdraw",
 
     # stake.rs compute_points_for_record entry guard: `record.amount <= 0
     # || record.withdrawn` → `&&`. Equivalent because the guard is
@@ -84,4 +107,41 @@ exclude_re = [
     # the inner guard) produce the IDENTICAL return value in every
     # reachable state — no test can distinguish them.
     "replace && with \\|\\| in ProtectionPool::get_points_balance",
+
+    # -------------------------------------------------------------------
+    # T2 additions, 2026-08-25 — from the first mutation campaign ever run
+    # against the T1->T2 graduation (404 mutants, 22 missed). 17 of the 21
+    # triaged were real test gaps and are now closed by
+    # src/test/t2_mutation_gap_tests.rs. These 3 are provably equivalent.
+    # -------------------------------------------------------------------
+
+    # vault.rs yield_balance: `if total > reserved { total - reserved } else
+    # { 0 }` -> `>=`. Zero-width boundary: at total == reserved the then-arm
+    # computes total - reserved == 0, byte-identical to the else-arm's 0. No
+    # reachable state distinguishes them. Same shape as
+    # compute_points_for_record's day tiers above.
+    "vault\\.rs:.*replace > with >= in yield_balance",
+
+    # vault.rs extract_yield: `let yield_amount = if xlm_received >
+    # principal_equiv { xlm_received - principal_equiv } else { 0 }` -> `>=`.
+    # Identical zero-width boundary — at equality the subtraction is 0.
+    #
+    # LINE-ANCHORED ON PURPOSE, and it must stay that way: extract_yield has
+    # THREE `> with >=` sites and they are NOT all equivalent. The third
+    # (`:606`, guarding the treasury transfer) is a REAL gap, killed by
+    # extract_yield_makes_no_treasury_transfer_when_there_is_no_yield. A
+    # function-scoped pattern here would silently swallow it — the exact
+    # failure mode that let vault.rs::withdraw_yield go unmeasured until
+    # 2026-08-25. Re-anchor if extract_yield's lines shift.
+    "vault\\.rs:584:.*replace > with >= in extract_yield",
+
+    # vault.rs extract_yield: `if yield_amount > 0 { set_total_extracted_yield
+    # (get_total_extracted_yield(env) + yield_amount) }` -> `>=`. At
+    # yield_amount == 0 the mutant writes `current + 0` — the same value
+    # already there. Entry EXISTENCE is not observable either, because
+    # storage::get_total_extracted_yield ends in `.unwrap_or(0)`
+    # (storage.rs:366-370), so an absent entry and an entry holding 0 read
+    # identically. Same reasoning as the activate_claim/withdraw entries above.
+    # Line-anchored for the same reason as :584.
+    "vault\\.rs:590:.*replace > with >= in extract_yield",
 ]
