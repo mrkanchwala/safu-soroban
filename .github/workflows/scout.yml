@@ -1,0 +1,131 @@
+# Scout static analysis — MANUAL TRIGGER ONLY.
+#
+# Deliberately NOT part of the CI gate. `rust-toolchain.toml` pins this repo to
+# stable 1.96.0 specifically so an upstream toolchain release cannot redden the
+# CI badge mid-review; a Scout job that is expected to fail on one of the two
+# packages would do exactly that if it sat in the gate.
+#
+# Purpose is evidential. The SCF Audit Bank intake form asks whether security
+# tooling was run *prior to* requesting the audit. A linkable run of this
+# workflow is a stronger answer than a local run, because a reviewer can
+# re-read the raw log themselves.
+#
+# Two packages are tested because they are genuinely different crates:
+#   cargo-scout-audit         0.3.16 — the general CoinFabrik tool (Ink! + Soroban)
+#   cargo-scout-audit-soroban 0.2.2  — a separate, Soroban-specific package
+#
+# Versions are pinned explicitly. `cargo install` without --version resolves to
+# latest, which makes a recorded result unreproducible.
+#
+# Both jobs use continue-on-error so the run always completes and always
+# publishes its logs: a failure here is a RESULT worth recording, not a broken
+# repo. Read the job summary, not the tick.
+
+name: Scout (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scout-general:
+    name: cargo-scout-audit 0.3.16
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Toolchain in use
+        run: |
+          rustc --version
+          cargo --version
+          cat rust-toolchain.toml
+
+      - name: Install cargo-scout-audit 0.3.16 (pinned)
+        run: cargo install cargo-scout-audit --version 0.3.16 --locked
+
+      - name: Run Scout
+        id: run
+        continue-on-error: true
+        run: |
+          set +e
+          cargo scout-audit 2>&1 | tee scout-general.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "## cargo-scout-audit 0.3.16"
+            echo ""
+            echo "Exit code: \`${{ steps.run.outputs.exit_code }}\`"
+            echo ""
+            echo '```'
+            tail -40 scout-general.log 2>/dev/null || echo "(no log produced)"
+            echo '```'
+            echo ""
+            echo "**Read the log, not the exit code.** Scout prints an"
+            echo "\`Analyzed | 0 | 0 | 0 | 0\` summary row even when the"
+            echo "underlying build fails. That row is vacuous and must never"
+            echo "be submitted as a clean result."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scout-general-log
+          path: scout-general.log
+          if-no-files-found: warn
+
+  scout-soroban:
+    name: cargo-scout-audit-soroban 0.2.2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install cargo-scout-audit-soroban 0.2.2 (pinned)
+        run: cargo install cargo-scout-audit-soroban --version 0.2.2 --locked
+
+      - name: Discover the installed binary
+        run: ls -la "$HOME/.cargo/bin" | tee cargo-bin.txt
+
+      - name: Run Scout (Soroban build)
+        id: run
+        continue-on-error: true
+        run: |
+          set +e
+          BIN=""
+          for c in cargo-scout-audit-soroban cargo-scout-audit; do
+            [ -x "$HOME/.cargo/bin/$c" ] && BIN="$c" && break
+          done
+          if [ -z "$BIN" ]; then
+            echo "no scout binary found after install" | tee scout-soroban.log
+            echo "exit_code=127" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "using binary: $BIN" | tee scout-soroban.log
+          "$HOME/.cargo/bin/$BIN" scout-audit 2>&1 | tee -a scout-soroban.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "## cargo-scout-audit-soroban 0.2.2"
+            echo ""
+            echo "Exit code: \`${{ steps.run.outputs.exit_code }}\`"
+            echo ""
+            echo '```'
+            tail -40 scout-soroban.log 2>/dev/null || echo "(no log produced)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scout-soroban-log
+          path: |
+            scout-soroban.log
+            cargo-bin.txt
+          if-no-files-found: warn
