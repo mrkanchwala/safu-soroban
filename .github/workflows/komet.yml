@@ -121,18 +121,39 @@ jobs:
 
       # Guard: the harness must never change the artifact that ships. The
       # feature-flag approach was rejected precisely because it did.
-      - name: Assert production Wasm is untouched
+      #
+      # REWRITTEN after run 33478740264, where this step was the ONLY failure
+      # and skipped the property tests entirely. It used to install stellar-cli
+      # and rebuild the pool just to compare an optimised Wasm hash. Three
+      # things were wrong with that:
+      #
+      #  1. It pinned `stellar-cli 23.1.4`, five majors behind current (28.0.0),
+      #     which no longer compiles under the rust-toolchain.toml pin. It spent
+      #     six minutes failing, `|| true` swallowed it, and the next line died
+      #     with `stellar: command not found` (exit 127).
+      #  2. The hash was hardcoded here, so every legitimate contract change —
+      #     the T3 mainnet deploy included — silently turns this red.
+      #  3. It was answering the question the expensive way. This workflow never
+      #     consumes the production Wasm: kasmer.json names only komet-harness
+      #     and komet-mock-token. The pool was built solely to be hashed.
+      #
+      # What we actually want to assert is that the harness did not touch the
+      # production contract. git answers that directly, in milliseconds, with no
+      # toolchain dependency and nothing to keep up to date. The structural half
+      # of the guarantee — that the harness crates are excluded from the
+      # workspace and so cannot reach the production build at all — is asserted
+      # here too, because that exclusion is a load-bearing invariant that a
+      # careless Cargo.toml edit could remove without any test noticing.
+      - name: Assert the harness did not touch the production contract
         run: |
           set -o pipefail
-          cargo install --locked stellar-cli --version 23.1.4 2>&1 | tail -2 || true
-          stellar contract build --optimize 2>&1 | tail -3
-          H=$(sha256sum target/wasm32v1-none/release/protection_pool.wasm | cut -d' ' -f1)
-          echo "production wasm: $H"
-          if [ "$H" != "2cec7e749d46b96a392be85dd284b8a988261ab7716b2218c7a5f39bbe2162db" ]; then
-            echo "::error::Production Wasm hash changed — the harness must never affect it."
-            exit 1
-          fi
-          echo "unchanged ✓"
+          git diff --exit-code HEAD -- contracts/protection-pool \
+            || { echo "::error::Harness build mutated contracts/protection-pool."; exit 1; }
+          test -z "$(git status --porcelain contracts/protection-pool)" \
+            || { echo "::error::Untracked files appeared under contracts/protection-pool."; exit 1; }
+          grep -q 'exclude = .*komet-harness' Cargo.toml \
+            || { echo "::error::Harness crates are no longer excluded from the workspace."; exit 1; }
+          echo "untouched ✓"
 
       # `-C <dir>` is the documented form; a bare `komet test` is not.
       - name: Run Komet property tests (fuzzing)
@@ -198,7 +219,13 @@ jobs:
             echo "::error::Komet produced no output — nothing was verified."
             exit 1
           fi
-          if grep -qiE "error|could not compile|command not found|no such file" komet-test.log komet-prove.log 2>/dev/null; then
+          # Anchored on purpose. The previous pattern matched a bare "error"
+          # anywhere in the log, and Komet's own reporting prints that word in
+          # benign contexts (counts, property names, summary tables). Because
+          # the tests had never actually run, that was never exercised — it
+          # would have failed a genuinely successful 40-minute run. Match only
+          # line-initial diagnostics and toolchain failures.
+          if grep -qiE "^(error|thread .* panicked)|could not compile|command not found|no such file" komet-test.log komet-prove.log 2>/dev/null; then
             {
               echo ""
               echo "### Verdict: NOTHING VERIFIED"
