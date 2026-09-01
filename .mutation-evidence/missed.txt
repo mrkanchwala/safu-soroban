@@ -1,0 +1,1 @@
+contracts/protection-pool/src/vault.rs:418:5: replace authorize_withdraw with ()

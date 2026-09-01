@@ -260,9 +260,24 @@ the earlier campaigns therefore no longer characterise this tree:
 The single miss is the already-documented `authorize_withdraw` survivor described
 below, now at `vault.rs:418`. **Zero new defects; nothing that the ~28 tests added
 since the Tranche 2 measurement had silently un-killed.** Run unattended in a
-container on the team's Linux host, `-j 3`, completed `2026-09-01T07:25:08Z`. The
-raw `caught`/`missed`/`unviable` outputs and the machine-readable `outcomes.json`
-were retained off-host as evidence.
+container on the team's Linux host, `-j 3`, completed `2026-09-01T07:25:08Z`.
+
+**The complete run outputs are committed to this repository under
+`.mutation-evidence/`** so the figures above can be checked rather than taken on
+trust — the same basis as the Komet log in §7:
+
+| File | Contents |
+|---|---|
+| `run-summary.txt` | the one-line result: 805 mutants, 1 missed, 782 caught, 22 unviable |
+| `missed.txt` | the single survivor, by `file:line:col` |
+| `caught.txt` | all 782 killed mutants, each by `file:line:col` and mutation operator |
+| `unviable.txt` | the 22 that could not compile, each by `file:line:col` |
+| `outcomes.json.gz` | the machine-readable `cargo-mutants` record, including per-mutant phase timings and the `cargo_mutants_version` that produced it |
+
+`782 + 22 + 1 = 805` is checkable directly from the line counts. Publishing
+`missed.txt` names our one uncaught mutant openly: it is a **test-coverage
+limitation, not a vulnerability** — `authorize_withdraw` is public source, and the
+reason it cannot be killed in-environment is set out above.
 
 ## 4. Fuzzing — 2 targets, 4 campaigns, 285,070 runs, zero crashes ever
 
@@ -341,6 +356,13 @@ grep -rn "unsafe" --include="*.rs" src/
   dependencies (re-checked **2026-09-01**, 1,235 advisories loaded). 1
   unmaintained-crate notice — `paste` 1.0.15, RUSTSEC-2024-0436, a transitive
   `soroban-sdk` dependency, not directly actionable.
+- **`ed25519-dalek` is deliberately pinned at `=2.2.0`** (`contracts/protection-pool/Cargo.toml:23`).
+  A 3.0.0 bump was opened and **closed unmerged**: it is a breaking major on the
+  **oracle signature-verification path**, and `cargo test` fails against it. Changing
+  the code that verifies oracle approvals immediately before an external audit would
+  trade a reviewed, working implementation for a version number. The pin is a
+  **stated decision, not an oversight** — it is revisited after the audit, and the
+  advisory database reports no CVE against 2.2.0.
 - **`cargo-scout-audit`: cannot analyse this crate — documented incompatibility,
   not a clean result.** Scout 0.3.16 (the current release) builds against
   `wasm32-unknown-unknown`; `soroban-sdk` 27 refuses that target on Rust 1.82+ and

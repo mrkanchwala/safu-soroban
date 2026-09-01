@@ -1,0 +1,22 @@
+contracts/protection-pool/src/lib.rs:218:9: replace ProtectionPool::submit_claim -> Result<BytesN<32>, PoolError> with Ok(Default::default())
+contracts/protection-pool/src/lib.rs:341:9: replace ProtectionPool::get_stake -> Option<StakeRecord> with Some(Default::default())
+contracts/protection-pool/src/lib.rs:345:9: replace ProtectionPool::get_claim -> Option<Claim> with Some(Default::default())
+contracts/protection-pool/src/lib.rs:498:9: replace ProtectionPool::get_vault -> Option<Address> with Some(Default::default())
+contracts/protection-pool/src/claim.rs:239:5: replace compute_claim_id -> BytesN<32> with Default::default()
+contracts/protection-pool/src/claim.rs:284:5: replace build_approval_payload -> Bytes with Default::default()
+contracts/protection-pool/src/claim.rs:301:5: replace approval_hash -> BytesN<32> with Default::default()
+contracts/protection-pool/src/claim.rs:555:5: replace submit_claim -> Result<BytesN<32>, PoolError> with Ok(Default::default())
+contracts/protection-pool/src/stake.rs:102:5: replace xlm_token_address -> Address with Default::default()
+contracts/protection-pool/src/storage.rs:124:5: replace get_admin -> Address with Default::default()
+contracts/protection-pool/src/storage.rs:132:5: replace get_oracle -> Address with Default::default()
+contracts/protection-pool/src/storage.rs:144:5: replace get_oracle_pubkey -> Option<BytesN<32>> with Some(Default::default())
+contracts/protection-pool/src/storage.rs:154:5: replace get_co_signer -> Address with Default::default()
+contracts/protection-pool/src/storage.rs:167:5: replace get_xlm_token -> Address with Default::default()
+contracts/protection-pool/src/storage.rs:313:5: replace get_vault -> Option<Address> with Some(Default::default())
+contracts/protection-pool/src/storage.rs:321:5: replace get_treasury -> Option<Address> with Some(Default::default())
+contracts/protection-pool/src/storage.rs:392:5: replace get_stake -> Option<StakeRecord> with Some(Default::default())
+contracts/protection-pool/src/storage.rs:408:5: replace get_claim -> Option<Claim> with Some(Default::default())
+contracts/protection-pool/src/storage.rs:426:5: replace get_override -> Option<OverrideRequest> with Some(Default::default())
+contracts/protection-pool/src/types.rs:48:37: replace * with /
+contracts/protection-pool/src/types.rs:85:43: replace * with +
+contracts/protection-pool/src/types.rs:85:43: replace * with /

@@ -1,0 +1,782 @@
+contracts/protection-pool/src/lib.rs:102:9: replace ProtectionPool::__constructor -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:134:9: replace ProtectionPool::set_oracle_identity -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:138:9: replace ProtectionPool::set_co_signer -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:121:9: replace ProtectionPool::set_oracle_pubkey -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:142:9: replace ProtectionPool::set_pool_cap -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:114:9: replace ProtectionPool::set_oracle -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:146:9: replace ProtectionPool::transfer_admin -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:150:9: replace ProtectionPool::pause with ()
+contracts/protection-pool/src/lib.rs:154:9: replace ProtectionPool::unpause with ()
+contracts/protection-pool/src/lib.rs:158:9: replace ProtectionPool::suspend_stake -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:180:9: replace ProtectionPool::stake -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:169:9: replace ProtectionPool::unsuspend_stake -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:184:9: replace ProtectionPool::withdraw -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:192:9: replace ProtectionPool::set_beneficiary -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:196:9: replace ProtectionPool::emergency_exit -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:245:9: replace ProtectionPool::revoke_approval -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:258:9: replace ProtectionPool::unlock_pending_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:266:9: replace ProtectionPool::try_release_queued_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:280:9: replace ProtectionPool::approve_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:272:9: replace ProtectionPool::expire_queued_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:287:9: replace ProtectionPool::expire_pending_approval -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:294:9: replace ProtectionPool::expire_stale_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:302:9: replace ProtectionPool::claim_stream -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/lib.rs:302:9: replace ProtectionPool::claim_stream -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/lib.rs:302:9: replace ProtectionPool::claim_stream -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/lib.rs:306:9: replace ProtectionPool::cancel_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:317:9: replace ProtectionPool::approve_override -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:326:9: replace ProtectionPool::cancel_pending_override -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:345:9: replace ProtectionPool::get_claim -> Option<Claim> with None
+contracts/protection-pool/src/lib.rs:341:9: replace ProtectionPool::get_stake -> Option<StakeRecord> with None
+contracts/protection-pool/src/lib.rs:351:9: replace ProtectionPool::get_points_balance -> i128 with 0
+contracts/protection-pool/src/lib.rs:351:9: replace ProtectionPool::get_points_balance -> i128 with 1
+contracts/protection-pool/src/lib.rs:351:9: replace ProtectionPool::get_points_balance -> i128 with -1
+contracts/protection-pool/src/lib.rs:352:30: replace > with == in ProtectionPool::get_points_balance
+contracts/protection-pool/src/lib.rs:352:30: replace > with < in ProtectionPool::get_points_balance
+contracts/protection-pool/src/lib.rs:352:37: delete ! in ProtectionPool::get_points_balance
+contracts/protection-pool/src/lib.rs:362:9: replace ProtectionPool::is_eligible -> bool with true
+contracts/protection-pool/src/lib.rs:362:9: replace ProtectionPool::is_eligible -> bool with false
+contracts/protection-pool/src/lib.rs:363:53: replace && with || in ProtectionPool::is_eligible
+contracts/protection-pool/src/lib.rs:363:37: replace && with || in ProtectionPool::is_eligible
+contracts/protection-pool/src/lib.rs:363:33: replace > with == in ProtectionPool::is_eligible
+contracts/protection-pool/src/lib.rs:363:33: replace > with < in ProtectionPool::is_eligible
+contracts/protection-pool/src/lib.rs:363:40: delete ! in ProtectionPool::is_eligible
+contracts/protection-pool/src/lib.rs:363:56: delete ! in ProtectionPool::is_eligible
+contracts/protection-pool/src/lib.rs:371:9: replace ProtectionPool::is_claim_eligible -> bool with true
+contracts/protection-pool/src/lib.rs:371:9: replace ProtectionPool::is_claim_eligible -> bool with false
+contracts/protection-pool/src/lib.rs:376:21: replace && with || in ProtectionPool::is_claim_eligible
+contracts/protection-pool/src/lib.rs:375:21: replace && with || in ProtectionPool::is_claim_eligible
+contracts/protection-pool/src/lib.rs:374:21: replace && with || in ProtectionPool::is_claim_eligible
+contracts/protection-pool/src/lib.rs:373:26: replace > with == in ProtectionPool::is_claim_eligible
+contracts/protection-pool/src/lib.rs:373:26: replace > with < in ProtectionPool::is_claim_eligible
+contracts/protection-pool/src/lib.rs:374:24: delete ! in ProtectionPool::is_claim_eligible
+contracts/protection-pool/src/lib.rs:375:24: delete ! in ProtectionPool::is_claim_eligible
+contracts/protection-pool/src/lib.rs:377:25: replace >= with < in ProtectionPool::is_claim_eligible
+contracts/protection-pool/src/lib.rs:400:9: replace ProtectionPool::set_vault -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:404:9: replace ProtectionPool::set_treasury -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:411:9: replace ProtectionPool::set_deploy_bps -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:423:9: replace ProtectionPool::deploy_to_vault -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/lib.rs:423:9: replace ProtectionPool::deploy_to_vault -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/lib.rs:423:9: replace ProtectionPool::deploy_to_vault -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/lib.rs:434:9: replace ProtectionPool::auto_deploy_liquidity -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/lib.rs:434:9: replace ProtectionPool::auto_deploy_liquidity -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/lib.rs:434:9: replace ProtectionPool::auto_deploy_liquidity -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/lib.rs:445:9: replace ProtectionPool::provide_liquidity -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/lib.rs:445:9: replace ProtectionPool::provide_liquidity -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/lib.rs:445:9: replace ProtectionPool::provide_liquidity -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/lib.rs:453:9: replace ProtectionPool::ensure_liquidity -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/lib.rs:453:9: replace ProtectionPool::ensure_liquidity -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/lib.rs:453:9: replace ProtectionPool::ensure_liquidity -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/lib.rs:459:9: replace ProtectionPool::extract_yield -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/lib.rs:459:9: replace ProtectionPool::extract_yield -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/lib.rs:459:9: replace ProtectionPool::extract_yield -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/lib.rs:464:9: replace ProtectionPool::withdraw_yield -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:472:9: replace ProtectionPool::get_liquid_balance -> i128 with 0
+contracts/protection-pool/src/lib.rs:472:9: replace ProtectionPool::get_liquid_balance -> i128 with 1
+contracts/protection-pool/src/lib.rs:472:9: replace ProtectionPool::get_liquid_balance -> i128 with -1
+contracts/protection-pool/src/lib.rs:477:9: replace ProtectionPool::get_total_deployed_xlm -> i128 with 0
+contracts/protection-pool/src/lib.rs:477:9: replace ProtectionPool::get_total_deployed_xlm -> i128 with 1
+contracts/protection-pool/src/lib.rs:477:9: replace ProtectionPool::get_total_deployed_xlm -> i128 with -1
+contracts/protection-pool/src/lib.rs:481:9: replace ProtectionPool::get_total_deployed_shares -> i128 with 0
+contracts/protection-pool/src/lib.rs:481:9: replace ProtectionPool::get_total_deployed_shares -> i128 with 1
+contracts/protection-pool/src/lib.rs:481:9: replace ProtectionPool::get_total_deployed_shares -> i128 with -1
+contracts/protection-pool/src/lib.rs:486:9: replace ProtectionPool::get_yield_balance -> i128 with 0
+contracts/protection-pool/src/lib.rs:486:9: replace ProtectionPool::get_yield_balance -> i128 with 1
+contracts/protection-pool/src/lib.rs:486:9: replace ProtectionPool::get_yield_balance -> i128 with -1
+contracts/protection-pool/src/lib.rs:490:9: replace ProtectionPool::get_total_extracted_yield -> i128 with 0
+contracts/protection-pool/src/lib.rs:490:9: replace ProtectionPool::get_total_extracted_yield -> i128 with 1
+contracts/protection-pool/src/lib.rs:490:9: replace ProtectionPool::get_total_extracted_yield -> i128 with -1
+contracts/protection-pool/src/lib.rs:494:9: replace ProtectionPool::get_deploy_bps -> i128 with 0
+contracts/protection-pool/src/lib.rs:494:9: replace ProtectionPool::get_deploy_bps -> i128 with 1
+contracts/protection-pool/src/lib.rs:494:9: replace ProtectionPool::get_deploy_bps -> i128 with -1
+contracts/protection-pool/src/lib.rs:498:9: replace ProtectionPool::get_vault -> Option<Address> with None
+contracts/protection-pool/src/lib.rs:504:9: replace ProtectionPool::get_deployment_ratio_bps -> i128 with 0
+contracts/protection-pool/src/lib.rs:504:9: replace ProtectionPool::get_deployment_ratio_bps -> i128 with 1
+contracts/protection-pool/src/lib.rs:504:9: replace ProtectionPool::get_deployment_ratio_bps -> i128 with -1
+contracts/protection-pool/src/lib.rs:508:9: replace ProtectionPool::get_total_staked -> i128 with 0
+contracts/protection-pool/src/lib.rs:508:9: replace ProtectionPool::get_total_staked -> i128 with 1
+contracts/protection-pool/src/lib.rs:508:9: replace ProtectionPool::get_total_staked -> i128 with -1
+contracts/protection-pool/src/lib.rs:512:9: replace ProtectionPool::get_total_allocated -> i128 with 0
+contracts/protection-pool/src/lib.rs:512:9: replace ProtectionPool::get_total_allocated -> i128 with 1
+contracts/protection-pool/src/lib.rs:512:9: replace ProtectionPool::get_total_allocated -> i128 with -1
+contracts/protection-pool/src/lib.rs:516:9: replace ProtectionPool::get_total_stakers -> u32 with 0
+contracts/protection-pool/src/lib.rs:516:9: replace ProtectionPool::get_total_stakers -> u32 with 1
+contracts/protection-pool/src/admin.rs:59:5: replace initialize -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/lib.rs:520:9: replace ProtectionPool::is_paused -> bool with true
+contracts/protection-pool/src/admin.rs:66:15: replace == with != in initialize
+contracts/protection-pool/src/admin.rs:69:18: replace == with != in initialize
+contracts/protection-pool/src/admin.rs:72:17: replace <= with > in initialize
+contracts/protection-pool/src/lib.rs:520:9: replace ProtectionPool::is_paused -> bool with false
+contracts/protection-pool/src/admin.rs:97:5: replace transfer_admin -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/admin.rs:101:18: replace == with != in transfer_admin
+contracts/protection-pool/src/admin.rs:115:5: replace pause with ()
+contracts/protection-pool/src/admin.rs:121:5: replace unpause with ()
+contracts/protection-pool/src/admin.rs:150:5: replace suspend_stake -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/admin.rs:154:22: replace <= with > in suspend_stake
+contracts/protection-pool/src/admin.rs:157:25: replace && with || in suspend_stake
+contracts/protection-pool/src/admin.rs:191:5: replace unsuspend_stake -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/admin.rs:195:22: replace <= with > in unsuspend_stake
+contracts/protection-pool/src/admin.rs:203:30: replace != with == in unsuspend_stake
+contracts/protection-pool/src/admin.rs:208:17: delete match arm ClaimStatus::AwaitingApproval in unsuspend_stake
+contracts/protection-pool/src/admin.rs:212:17: delete match arm ClaimStatus::Active in unsuspend_stake
+contracts/protection-pool/src/admin.rs:209:64: replace + with - in unsuspend_stake
+contracts/protection-pool/src/admin.rs:209:64: replace + with * in unsuspend_stake
+contracts/protection-pool/src/admin.rs:225:5: replace set_pool_cap -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/admin.rs:228:16: replace <= with > in set_pool_cap
+contracts/protection-pool/src/admin.rs:234:16: replace < with == in set_pool_cap
+contracts/protection-pool/src/admin.rs:234:16: replace < with > in set_pool_cap
+contracts/protection-pool/src/admin.rs:234:16: replace < with <= in set_pool_cap
+contracts/protection-pool/src/admin.rs:243:5: replace set_oracle -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/admin.rs:247:19: replace == with != in set_oracle
+contracts/protection-pool/src/admin.rs:274:5: replace set_oracle_pubkey -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/admin.rs:318:5: replace set_oracle_identity -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/admin.rs:322:19: replace == with != in set_oracle_identity
+contracts/protection-pool/src/admin.rs:333:5: replace set_co_signer -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/admin.rs:337:22: replace == with != in set_co_signer
+contracts/protection-pool/src/admin.rs:351:22: replace == with != in set_co_signer
+contracts/protection-pool/src/claim.rs:180:5: replace tier_ratio -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/claim.rs:180:5: replace tier_ratio -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/claim.rs:180:5: replace tier_ratio -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/claim.rs:181:9: delete match arm 1 in tier_ratio
+contracts/protection-pool/src/claim.rs:182:9: delete match arm 2 in tier_ratio
+contracts/protection-pool/src/claim.rs:191:5: replace tier_cap -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/claim.rs:183:9: delete match arm 3 in tier_ratio
+contracts/protection-pool/src/claim.rs:191:5: replace tier_cap -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/claim.rs:191:5: replace tier_cap -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/claim.rs:191:61: replace / with % in tier_cap
+contracts/protection-pool/src/claim.rs:191:41: replace * with / in tier_cap
+contracts/protection-pool/src/claim.rs:191:61: replace / with * in tier_cap
+contracts/protection-pool/src/claim.rs:191:41: replace * with + in tier_cap
+contracts/protection-pool/src/claim.rs:191:21: replace * with + in tier_cap
+contracts/protection-pool/src/claim.rs:191:21: replace * with / in tier_cap
+contracts/protection-pool/src/claim.rs:197:5: replace stress_cap -> i128 with 0
+contracts/protection-pool/src/claim.rs:197:5: replace stress_cap -> i128 with 1
+contracts/protection-pool/src/claim.rs:197:5: replace stress_cap -> i128 with -1
+contracts/protection-pool/src/claim.rs:198:21: replace == with != in stress_cap
+contracts/protection-pool/src/claim.rs:202:61: replace / with % in stress_cap
+contracts/protection-pool/src/claim.rs:202:61: replace / with * in stress_cap
+contracts/protection-pool/src/claim.rs:202:43: replace * with + in stress_cap
+contracts/protection-pool/src/claim.rs:203:39: replace < with == in stress_cap
+contracts/protection-pool/src/claim.rs:203:39: replace < with > in stress_cap
+contracts/protection-pool/src/claim.rs:202:43: replace * with / in stress_cap
+contracts/protection-pool/src/claim.rs:203:39: replace < with <= in stress_cap
+contracts/protection-pool/src/claim.rs:205:31: replace < with == in stress_cap
+contracts/protection-pool/src/claim.rs:205:31: replace < with > in stress_cap
+contracts/protection-pool/src/claim.rs:210:29: replace / with % in stress_cap
+contracts/protection-pool/src/claim.rs:205:31: replace < with <= in stress_cap
+contracts/protection-pool/src/claim.rs:210:29: replace / with * in stress_cap
+contracts/protection-pool/src/claim.rs:210:18: replace * with / in stress_cap
+contracts/protection-pool/src/claim.rs:210:18: replace * with + in stress_cap
+contracts/protection-pool/src/claim.rs:218:5: replace dynamic_outflow_bps -> i128 with 0
+contracts/protection-pool/src/claim.rs:218:5: replace dynamic_outflow_bps -> i128 with 1
+contracts/protection-pool/src/claim.rs:218:5: replace dynamic_outflow_bps -> i128 with -1
+contracts/protection-pool/src/claim.rs:218:13: replace == with != in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:222:61: replace / with % in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:222:61: replace / with * in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:222:43: replace * with + in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:222:43: replace * with / in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:223:24: replace < with == in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:223:24: replace < with > in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:223:24: replace < with <= in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:225:31: replace < with == in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:225:31: replace < with > in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:233:5: replace current_day -> u32 with 0
+contracts/protection-pool/src/claim.rs:233:5: replace current_day -> u32 with 1
+contracts/protection-pool/src/claim.rs:225:31: replace < with <= in dynamic_outflow_bps
+contracts/protection-pool/src/claim.rs:233:31: replace / with % in current_day
+contracts/protection-pool/src/claim.rs:233:31: replace / with * in current_day
+contracts/protection-pool/src/claim.rs:331:5: replace verify_oracle_signature -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:334:15: replace > with == in verify_oracle_signature
+contracts/protection-pool/src/claim.rs:334:15: replace > with < in verify_oracle_signature
+contracts/protection-pool/src/claim.rs:341:17: replace > with < in verify_oracle_signature
+contracts/protection-pool/src/claim.rs:334:15: replace > with >= in verify_oracle_signature
+contracts/protection-pool/src/claim.rs:341:17: replace > with == in verify_oracle_signature
+contracts/protection-pool/src/claim.rs:341:26: replace + with - in verify_oracle_signature
+contracts/protection-pool/src/claim.rs:341:17: replace > with >= in verify_oracle_signature
+contracts/protection-pool/src/claim.rs:391:5: replace activate_claim -> i128 with 0
+contracts/protection-pool/src/claim.rs:391:5: replace activate_claim -> i128 with 1
+contracts/protection-pool/src/claim.rs:341:26: replace + with * in verify_oracle_signature
+contracts/protection-pool/src/claim.rs:391:5: replace activate_claim -> i128 with -1
+contracts/protection-pool/src/claim.rs:393:35: replace + with - in activate_claim
+contracts/protection-pool/src/claim.rs:393:35: replace + with * in activate_claim
+contracts/protection-pool/src/claim.rs:411:49: replace - with + in activate_claim
+contracts/protection-pool/src/claim.rs:411:49: replace - with / in activate_claim
+contracts/protection-pool/src/claim.rs:416:45: replace + with * in activate_claim
+contracts/protection-pool/src/claim.rs:416:45: replace + with - in activate_claim
+contracts/protection-pool/src/claim.rs:417:60: replace + with - in activate_claim
+contracts/protection-pool/src/claim.rs:417:60: replace + with * in activate_claim
+contracts/protection-pool/src/claim.rs:455:5: replace admit_claim with ()
+contracts/protection-pool/src/claim.rs:461:19: replace + with - in admit_claim
+contracts/protection-pool/src/claim.rs:460:25: replace + with - in admit_claim
+contracts/protection-pool/src/claim.rs:460:25: replace + with * in admit_claim
+contracts/protection-pool/src/claim.rs:461:19: replace + with * in admit_claim
+contracts/protection-pool/src/claim.rs:463:73: replace + with * in admit_claim
+contracts/protection-pool/src/claim.rs:463:73: replace + with - in admit_claim
+contracts/protection-pool/src/claim.rs:471:77: replace >= with < in admit_claim
+contracts/protection-pool/src/claim.rs:495:52: replace + with - in admit_claim
+contracts/protection-pool/src/claim.rs:495:52: replace + with * in admit_claim
+contracts/protection-pool/src/claim.rs:559:26: replace && with || in submit_claim
+contracts/protection-pool/src/claim.rs:559:15: replace != with == in submit_claim
+contracts/protection-pool/src/claim.rs:564:20: replace <= with > in submit_claim
+contracts/protection-pool/src/claim.rs:559:36: replace != with == in submit_claim
+contracts/protection-pool/src/claim.rs:588:28: replace <= with > in submit_claim
+contracts/protection-pool/src/claim.rs:573:15: replace == with != in submit_claim
+contracts/protection-pool/src/claim.rs:611:20: replace > with < in submit_claim
+contracts/protection-pool/src/claim.rs:611:20: replace > with == in submit_claim
+contracts/protection-pool/src/claim.rs:611:20: replace > with >= in submit_claim
+contracts/protection-pool/src/claim.rs:616:23: replace > with == in submit_claim
+contracts/protection-pool/src/claim.rs:616:23: replace > with >= in submit_claim
+contracts/protection-pool/src/claim.rs:616:23: replace > with < in submit_claim
+contracts/protection-pool/src/claim.rs:619:23: replace < with > in submit_claim
+contracts/protection-pool/src/claim.rs:619:23: replace < with == in submit_claim
+contracts/protection-pool/src/claim.rs:622:15: replace > with < in submit_claim
+contracts/protection-pool/src/claim.rs:619:23: replace < with <= in submit_claim
+contracts/protection-pool/src/claim.rs:622:15: replace > with == in submit_claim
+contracts/protection-pool/src/claim.rs:622:32: replace + with - in submit_claim
+contracts/protection-pool/src/claim.rs:622:15: replace > with >= in submit_claim
+contracts/protection-pool/src/claim.rs:622:32: replace + with * in submit_claim
+contracts/protection-pool/src/claim.rs:628:51: replace > with < in submit_claim
+contracts/protection-pool/src/claim.rs:628:51: replace > with == in submit_claim
+contracts/protection-pool/src/claim.rs:628:51: replace > with >= in submit_claim
+contracts/protection-pool/src/claim.rs:628:37: replace + with - in submit_claim
+contracts/protection-pool/src/claim.rs:628:37: replace + with * in submit_claim
+contracts/protection-pool/src/claim.rs:632:55: replace > with < in submit_claim
+contracts/protection-pool/src/claim.rs:632:55: replace > with == in submit_claim
+contracts/protection-pool/src/claim.rs:632:55: replace > with >= in submit_claim
+contracts/protection-pool/src/claim.rs:632:41: replace + with - in submit_claim
+contracts/protection-pool/src/claim.rs:632:41: replace + with * in submit_claim
+contracts/protection-pool/src/claim.rs:634:35: replace == with != in submit_claim
+contracts/protection-pool/src/claim.rs:642:36: replace / with % in submit_claim
+contracts/protection-pool/src/claim.rs:643:19: replace >= with < in submit_claim
+contracts/protection-pool/src/claim.rs:642:36: replace / with * in submit_claim
+contracts/protection-pool/src/claim.rs:650:28: replace != with == in submit_claim
+contracts/protection-pool/src/claim.rs:681:35: replace || with && in submit_claim
+contracts/protection-pool/src/claim.rs:681:18: replace || with && in submit_claim
+contracts/protection-pool/src/claim.rs:744:5: replace try_release_queued_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:747:21: replace != with == in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:764:22: replace != with == in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:771:44: replace > with == in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:771:44: replace > with < in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:771:44: replace > with >= in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:771:24: replace + with - in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:771:24: replace + with * in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:777:44: replace > with == in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:777:44: replace > with < in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:777:44: replace > with >= in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:777:24: replace + with - in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:777:24: replace + with * in try_release_queued_claim
+contracts/protection-pool/src/claim.rs:810:5: replace expire_queued_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:813:21: replace != with == in expire_queued_claim
+contracts/protection-pool/src/claim.rs:818:15: replace <= with > in expire_queued_claim
+contracts/protection-pool/src/claim.rs:818:39: replace + with - in expire_queued_claim
+contracts/protection-pool/src/claim.rs:818:39: replace + with * in expire_queued_claim
+contracts/protection-pool/src/claim.rs:850:5: replace unlock_pending_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:853:21: replace != with == in unlock_pending_claim
+contracts/protection-pool/src/claim.rs:860:19: replace < with == in unlock_pending_claim
+contracts/protection-pool/src/claim.rs:860:19: replace < with > in unlock_pending_claim
+contracts/protection-pool/src/claim.rs:860:19: replace < with <= in unlock_pending_claim
+contracts/protection-pool/src/claim.rs:860:51: replace + with - in unlock_pending_claim
+contracts/protection-pool/src/claim.rs:860:51: replace + with * in unlock_pending_claim
+contracts/protection-pool/src/claim.rs:890:5: replace approve_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:865:48: replace + with - in unlock_pending_claim
+contracts/protection-pool/src/claim.rs:865:48: replace + with * in unlock_pending_claim
+contracts/protection-pool/src/claim.rs:895:21: replace != with == in approve_claim
+contracts/protection-pool/src/claim.rs:899:19: replace > with < in approve_claim
+contracts/protection-pool/src/claim.rs:899:19: replace > with == in approve_claim
+contracts/protection-pool/src/claim.rs:899:19: replace > with >= in approve_claim
+contracts/protection-pool/src/claim.rs:935:5: replace expire_pending_approval -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:936:21: replace != with == in expire_pending_approval
+contracts/protection-pool/src/claim.rs:954:19: replace <= with > in expire_pending_approval
+contracts/protection-pool/src/claim.rs:988:5: replace expire_stale_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:989:21: replace != with == in expire_stale_claim
+contracts/protection-pool/src/claim.rs:992:23: replace >= with < in expire_stale_claim
+contracts/protection-pool/src/claim.rs:1005:63: replace <= with > in expire_stale_claim
+contracts/protection-pool/src/claim.rs:1009:39: replace - with + in expire_stale_claim
+contracts/protection-pool/src/claim.rs:1040:5: replace claim_stream -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/claim.rs:1009:39: replace - with / in expire_stale_claim
+contracts/protection-pool/src/claim.rs:1040:5: replace claim_stream -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/claim.rs:1045:21: replace != with == in claim_stream
+contracts/protection-pool/src/claim.rs:1040:5: replace claim_stream -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/claim.rs:1049:19: replace < with > in claim_stream
+contracts/protection-pool/src/claim.rs:1049:19: replace < with == in claim_stream
+contracts/protection-pool/src/claim.rs:1052:23: replace >= with < in claim_stream
+contracts/protection-pool/src/claim.rs:1049:19: replace < with <= in claim_stream
+contracts/protection-pool/src/claim.rs:1062:22: replace != with == in claim_stream
+contracts/protection-pool/src/claim.rs:1068:52: replace / with % in claim_stream
+contracts/protection-pool/src/claim.rs:1068:52: replace / with * in claim_stream
+contracts/protection-pool/src/claim.rs:1068:42: replace * with / in claim_stream
+contracts/protection-pool/src/claim.rs:1068:42: replace * with + in claim_stream
+contracts/protection-pool/src/claim.rs:1069:34: replace - with / in claim_stream
+contracts/protection-pool/src/claim.rs:1070:18: replace <= with > in claim_stream
+contracts/protection-pool/src/claim.rs:1069:34: replace - with + in claim_stream
+contracts/protection-pool/src/claim.rs:1078:30: replace / with % in claim_stream
+contracts/protection-pool/src/claim.rs:1078:30: replace / with * in claim_stream
+contracts/protection-pool/src/claim.rs:1078:24: replace * with + in claim_stream
+contracts/protection-pool/src/claim.rs:1078:24: replace * with / in claim_stream
+contracts/protection-pool/src/claim.rs:1089:24: replace <= with > in claim_stream
+contracts/protection-pool/src/claim.rs:1103:20: replace += with -= in claim_stream
+contracts/protection-pool/src/claim.rs:1103:20: replace += with *= in claim_stream
+contracts/protection-pool/src/claim.rs:1106:23: replace >= with < in claim_stream
+contracts/protection-pool/src/claim.rs:1121:63: replace + with - in claim_stream
+contracts/protection-pool/src/claim.rs:1121:63: replace + with * in claim_stream
+contracts/protection-pool/src/claim.rs:1142:5: replace cancel_claim -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:1152:9: replace && with || in cancel_claim
+contracts/protection-pool/src/claim.rs:1151:9: replace && with || in cancel_claim
+contracts/protection-pool/src/claim.rs:1150:21: replace != with == in cancel_claim
+contracts/protection-pool/src/claim.rs:1151:25: replace != with == in cancel_claim
+contracts/protection-pool/src/claim.rs:1152:25: replace != with == in cancel_claim
+contracts/protection-pool/src/claim.rs:1157:40: replace - with + in cancel_claim
+contracts/protection-pool/src/claim.rs:1157:40: replace - with / in cancel_claim
+contracts/protection-pool/src/claim.rs:1172:21: replace == with != in cancel_claim
+contracts/protection-pool/src/claim.rs:1178:76: replace + with - in cancel_claim
+contracts/protection-pool/src/claim.rs:1178:76: replace + with * in cancel_claim
+contracts/protection-pool/src/claim.rs:1179:71: replace + with - in cancel_claim
+contracts/protection-pool/src/claim.rs:1179:71: replace + with * in cancel_claim
+contracts/protection-pool/src/claim.rs:1180:73: replace + with - in cancel_claim
+contracts/protection-pool/src/claim.rs:1180:73: replace + with * in cancel_claim
+contracts/protection-pool/src/claim.rs:1212:5: replace approve_override -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:1216:25: replace && with || in approve_override
+contracts/protection-pool/src/claim.rs:1216:15: replace != with == in approve_override
+contracts/protection-pool/src/claim.rs:1216:35: replace != with == in approve_override
+contracts/protection-pool/src/claim.rs:1221:20: replace <= with > in approve_override
+contracts/protection-pool/src/claim.rs:1238:39: replace || with && in approve_override
+contracts/protection-pool/src/claim.rs:1238:24: replace != with == in approve_override
+contracts/protection-pool/src/claim.rs:1238:51: replace != with == in approve_override
+contracts/protection-pool/src/claim.rs:1242:15: replace == with != in approve_override
+contracts/protection-pool/src/claim.rs:1245:15: replace == with != in approve_override
+contracts/protection-pool/src/claim.rs:1258:9: replace || with && in approve_override
+contracts/protection-pool/src/claim.rs:1257:9: replace && with || in approve_override
+contracts/protection-pool/src/claim.rs:1256:37: replace == with != in approve_override
+contracts/protection-pool/src/claim.rs:1257:35: replace == with != in approve_override
+contracts/protection-pool/src/claim.rs:1258:22: replace == with != in approve_override
+contracts/protection-pool/src/claim.rs:1276:5: replace execute_override -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:1285:21: replace == with != in execute_override
+contracts/protection-pool/src/claim.rs:1302:13: replace || with && in execute_override
+contracts/protection-pool/src/claim.rs:1301:13: replace || with && in execute_override
+contracts/protection-pool/src/claim.rs:1300:21: replace == with != in execute_override
+contracts/protection-pool/src/claim.rs:1301:25: replace == with != in execute_override
+contracts/protection-pool/src/claim.rs:1302:25: replace == with != in execute_override
+contracts/protection-pool/src/claim.rs:1304:44: replace - with + in execute_override
+contracts/protection-pool/src/claim.rs:1304:44: replace - with / in execute_override
+contracts/protection-pool/src/claim.rs:1309:21: replace == with != in execute_override
+contracts/protection-pool/src/claim.rs:1326:22: replace != with == in execute_override
+contracts/protection-pool/src/claim.rs:1336:30: replace <= with > in execute_override
+contracts/protection-pool/src/claim.rs:1341:24: replace > with == in execute_override
+contracts/protection-pool/src/claim.rs:1341:24: replace > with < in execute_override
+contracts/protection-pool/src/claim.rs:1341:24: replace > with >= in execute_override
+contracts/protection-pool/src/claim.rs:1356:22: replace + with - in execute_override
+contracts/protection-pool/src/claim.rs:1356:22: replace + with * in execute_override
+contracts/protection-pool/src/claim.rs:1361:42: replace > with == in execute_override
+contracts/protection-pool/src/claim.rs:1361:42: replace > with < in execute_override
+contracts/protection-pool/src/claim.rs:1361:42: replace > with >= in execute_override
+contracts/protection-pool/src/claim.rs:1361:24: replace + with - in execute_override
+contracts/protection-pool/src/claim.rs:1361:24: replace + with * in execute_override
+contracts/protection-pool/src/claim.rs:1364:55: replace + with - in execute_override
+contracts/protection-pool/src/claim.rs:1364:55: replace + with * in execute_override
+contracts/protection-pool/src/claim.rs:1393:28: delete ! in execute_override
+contracts/protection-pool/src/claim.rs:1397:49: replace + with - in execute_override
+contracts/protection-pool/src/claim.rs:1397:49: replace + with * in execute_override
+contracts/protection-pool/src/claim.rs:1398:64: replace + with - in execute_override
+contracts/protection-pool/src/claim.rs:1398:64: replace + with * in execute_override
+contracts/protection-pool/src/claim.rs:1412:48: replace == with != in execute_override
+contracts/protection-pool/src/claim.rs:1445:5: replace cancel_pending_override -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:1446:15: replace != with == in cancel_pending_override
+contracts/protection-pool/src/claim.rs:1499:5: replace revoke_approval -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/claim.rs:1500:15: replace != with == in revoke_approval
+contracts/protection-pool/src/claim.rs:1506:15: replace > with == in revoke_approval
+contracts/protection-pool/src/claim.rs:1506:15: replace > with < in revoke_approval
+contracts/protection-pool/src/claim.rs:1506:15: replace > with >= in revoke_approval
+contracts/protection-pool/src/claim.rs:1509:17: replace > with == in revoke_approval
+contracts/protection-pool/src/claim.rs:1509:17: replace > with < in revoke_approval
+contracts/protection-pool/src/claim.rs:1509:17: replace > with >= in revoke_approval
+contracts/protection-pool/src/claim.rs:1509:26: replace + with - in revoke_approval
+contracts/protection-pool/src/claim.rs:1509:26: replace + with * in revoke_approval
+contracts/protection-pool/src/stake.rs:68:5: replace compute_points -> i128 with 0
+contracts/protection-pool/src/stake.rs:68:5: replace compute_points -> i128 with 1
+contracts/protection-pool/src/stake.rs:68:5: replace compute_points -> i128 with -1
+contracts/protection-pool/src/stake.rs:80:5: replace compute_points_for_record -> i128 with 0
+contracts/protection-pool/src/stake.rs:80:5: replace compute_points_for_record -> i128 with 1
+contracts/protection-pool/src/stake.rs:80:5: replace compute_points_for_record -> i128 with -1
+contracts/protection-pool/src/stake.rs:80:22: replace <= with > in compute_points_for_record
+contracts/protection-pool/src/stake.rs:85:58: replace / with * in compute_points_for_record
+contracts/protection-pool/src/stake.rs:85:58: replace / with % in compute_points_for_record
+contracts/protection-pool/src/stake.rs:87:19: replace > with == in compute_points_for_record
+contracts/protection-pool/src/stake.rs:87:37: replace - with + in compute_points_for_record
+contracts/protection-pool/src/stake.rs:87:19: replace > with < in compute_points_for_record
+contracts/protection-pool/src/stake.rs:87:37: replace - with / in compute_points_for_record
+contracts/protection-pool/src/stake.rs:88:19: replace > with == in compute_points_for_record
+contracts/protection-pool/src/stake.rs:88:19: replace > with < in compute_points_for_record
+contracts/protection-pool/src/stake.rs:88:38: replace - with + in compute_points_for_record
+contracts/protection-pool/src/stake.rs:88:38: replace - with / in compute_points_for_record
+contracts/protection-pool/src/stake.rs:89:19: replace > with == in compute_points_for_record
+contracts/protection-pool/src/stake.rs:89:19: replace > with < in compute_points_for_record
+contracts/protection-pool/src/stake.rs:89:29: replace - with + in compute_points_for_record
+contracts/protection-pool/src/stake.rs:89:29: replace - with / in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:47: replace + with - in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:47: replace + with * in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:36: replace + with - in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:36: replace + with * in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:25: replace + with - in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:25: replace + with * in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:19: replace * with + in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:19: replace * with / in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:30: replace * with + in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:30: replace * with / in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:41: replace * with + in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:41: replace * with / in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:52: replace * with + in compute_points_for_record
+contracts/protection-pool/src/stake.rs:90:52: replace * with / in compute_points_for_record
+contracts/protection-pool/src/stake.rs:93:14: replace <= with > in compute_points_for_record
+contracts/protection-pool/src/stake.rs:96:26: replace / with % in compute_points_for_record
+contracts/protection-pool/src/stake.rs:96:26: replace / with * in compute_points_for_record
+contracts/protection-pool/src/stake.rs:96:10: replace * with + in compute_points_for_record
+contracts/protection-pool/src/stake.rs:96:10: replace * with / in compute_points_for_record
+contracts/protection-pool/src/stake.rs:109:5: replace min_stake -> i128 with 0
+contracts/protection-pool/src/stake.rs:109:5: replace min_stake -> i128 with 1
+contracts/protection-pool/src/stake.rs:109:5: replace min_stake -> i128 with -1
+contracts/protection-pool/src/stake.rs:109:48: replace / with * in min_stake
+contracts/protection-pool/src/stake.rs:109:32: replace * with + in min_stake
+contracts/protection-pool/src/stake.rs:113:5: replace max_stake -> i128 with 0
+contracts/protection-pool/src/stake.rs:109:48: replace / with % in min_stake
+contracts/protection-pool/src/stake.rs:113:5: replace max_stake -> i128 with 1
+contracts/protection-pool/src/stake.rs:113:5: replace max_stake -> i128 with -1
+contracts/protection-pool/src/stake.rs:109:32: replace * with / in min_stake
+contracts/protection-pool/src/stake.rs:113:48: replace / with % in max_stake
+contracts/protection-pool/src/stake.rs:113:32: replace * with / in max_stake
+contracts/protection-pool/src/stake.rs:122:5: replace stake -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/stake.rs:113:48: replace / with * in max_stake
+contracts/protection-pool/src/stake.rs:125:15: replace <= with > in stake
+contracts/protection-pool/src/stake.rs:113:32: replace * with + in max_stake
+contracts/protection-pool/src/stake.rs:130:15: replace < with > in stake
+contracts/protection-pool/src/stake.rs:130:32: replace || with && in stake
+contracts/protection-pool/src/stake.rs:130:15: replace < with == in stake
+contracts/protection-pool/src/stake.rs:130:42: replace > with == in stake
+contracts/protection-pool/src/stake.rs:130:15: replace < with <= in stake
+contracts/protection-pool/src/stake.rs:130:42: replace > with >= in stake
+contracts/protection-pool/src/stake.rs:130:42: replace > with < in stake
+contracts/protection-pool/src/stake.rs:137:32: replace && with || in stake
+contracts/protection-pool/src/stake.rs:137:28: replace > with == in stake
+contracts/protection-pool/src/stake.rs:137:28: replace > with < in stake
+contracts/protection-pool/src/stake.rs:145:30: replace > with < in stake
+contracts/protection-pool/src/stake.rs:137:35: delete ! in stake
+contracts/protection-pool/src/stake.rs:145:30: replace > with == in stake
+contracts/protection-pool/src/stake.rs:145:21: replace + with * in stake
+contracts/protection-pool/src/stake.rs:153:20: replace == with != in stake
+contracts/protection-pool/src/stake.rs:145:30: replace > with >= in stake
+contracts/protection-pool/src/stake.rs:156:20: replace == with != in stake
+contracts/protection-pool/src/stake.rs:145:21: replace + with - in stake
+contracts/protection-pool/src/stake.rs:159:20: replace == with != in stake
+contracts/protection-pool/src/stake.rs:162:20: replace == with != in stake
+contracts/protection-pool/src/stake.rs:182:49: replace + with - in stake
+contracts/protection-pool/src/stake.rs:183:69: replace + with - in stake
+contracts/protection-pool/src/stake.rs:182:49: replace + with * in stake
+contracts/protection-pool/src/stake.rs:183:69: replace + with * in stake
+contracts/protection-pool/src/stake.rs:202:5: replace set_beneficiary -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/stake.rs:205:24: replace == with != in set_beneficiary
+contracts/protection-pool/src/stake.rs:208:24: replace == with != in set_beneficiary
+contracts/protection-pool/src/stake.rs:211:24: replace == with != in set_beneficiary
+contracts/protection-pool/src/stake.rs:214:24: replace == with != in set_beneficiary
+contracts/protection-pool/src/stake.rs:219:22: replace <= with > in set_beneficiary
+contracts/protection-pool/src/stake.rs:232:5: replace withdraw -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/stake.rs:237:22: replace <= with > in withdraw
+contracts/protection-pool/src/stake.rs:247:12: replace < with == in withdraw
+contracts/protection-pool/src/stake.rs:247:12: replace < with > in withdraw
+contracts/protection-pool/src/stake.rs:247:12: replace < with <= in withdraw
+contracts/protection-pool/src/stake.rs:252:22: replace != with == in withdraw
+contracts/protection-pool/src/stake.rs:274:21: replace > with == in withdraw
+contracts/protection-pool/src/stake.rs:274:21: replace > with < in withdraw
+contracts/protection-pool/src/stake.rs:276:57: replace + with - in withdraw
+contracts/protection-pool/src/stake.rs:276:57: replace + with * in withdraw
+contracts/protection-pool/src/stake.rs:280:49: replace - with + in withdraw
+contracts/protection-pool/src/stake.rs:280:49: replace - with / in withdraw
+contracts/protection-pool/src/stake.rs:300:5: replace emergency_exit -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/stake.rs:303:27: replace || with && in emergency_exit
+contracts/protection-pool/src/stake.rs:303:22: replace <= with > in emergency_exit
+contracts/protection-pool/src/stake.rs:325:49: replace - with + in emergency_exit
+contracts/protection-pool/src/stake.rs:325:49: replace - with / in emergency_exit
+contracts/protection-pool/src/storage.rs:24:26: replace * with +
+contracts/protection-pool/src/storage.rs:24:26: replace * with /
+contracts/protection-pool/src/storage.rs:23:32: replace * with +
+contracts/protection-pool/src/storage.rs:128:5: replace set_admin with ()
+contracts/protection-pool/src/storage.rs:136:5: replace set_oracle with ()
+contracts/protection-pool/src/storage.rs:23:32: replace * with /
+contracts/protection-pool/src/storage.rs:144:5: replace get_oracle_pubkey -> Option<BytesN<32>> with None
+contracts/protection-pool/src/storage.rs:148:5: replace set_oracle_pubkey with ()
+contracts/protection-pool/src/storage.rs:158:5: replace set_co_signer with ()
+contracts/protection-pool/src/storage.rs:171:5: replace set_xlm_token with ()
+contracts/protection-pool/src/storage.rs:175:5: replace get_pool_cap -> i128 with 0
+contracts/protection-pool/src/storage.rs:175:5: replace get_pool_cap -> i128 with 1
+contracts/protection-pool/src/storage.rs:175:5: replace get_pool_cap -> i128 with -1
+contracts/protection-pool/src/storage.rs:179:5: replace set_pool_cap with ()
+contracts/protection-pool/src/storage.rs:183:5: replace get_total_staked -> i128 with 0
+contracts/protection-pool/src/storage.rs:183:5: replace get_total_staked -> i128 with 1
+contracts/protection-pool/src/storage.rs:183:5: replace get_total_staked -> i128 with -1
+contracts/protection-pool/src/storage.rs:190:5: replace set_total_staked with ()
+contracts/protection-pool/src/storage.rs:194:5: replace get_total_allocated -> i128 with 0
+contracts/protection-pool/src/storage.rs:194:5: replace get_total_allocated -> i128 with 1
+contracts/protection-pool/src/storage.rs:194:5: replace get_total_allocated -> i128 with -1
+contracts/protection-pool/src/storage.rs:201:5: replace set_total_allocated with ()
+contracts/protection-pool/src/storage.rs:207:5: replace get_total_stakers -> u32 with 0
+contracts/protection-pool/src/storage.rs:207:5: replace get_total_stakers -> u32 with 1
+contracts/protection-pool/src/storage.rs:218:5: replace is_paused -> bool with true
+contracts/protection-pool/src/storage.rs:214:5: replace set_total_stakers with ()
+contracts/protection-pool/src/storage.rs:218:5: replace is_paused -> bool with false
+contracts/protection-pool/src/storage.rs:222:5: replace set_paused with ()
+contracts/protection-pool/src/storage.rs:232:5: replace require_not_paused -> Result<(), crate::error::PoolError> with Ok(())
+contracts/protection-pool/src/storage.rs:244:5: replace get_daily_outflow -> i128 with 0
+contracts/protection-pool/src/storage.rs:244:5: replace get_daily_outflow -> i128 with 1
+contracts/protection-pool/src/storage.rs:244:5: replace get_daily_outflow -> i128 with -1
+contracts/protection-pool/src/storage.rs:249:17: replace != with == in get_daily_outflow
+contracts/protection-pool/src/storage.rs:260:5: replace set_daily_outflow with ()
+contracts/protection-pool/src/storage.rs:272:5: replace get_daily_entitlement -> (i128, u32) with (0, 0)
+contracts/protection-pool/src/storage.rs:272:5: replace get_daily_entitlement -> (i128, u32) with (0, 1)
+contracts/protection-pool/src/storage.rs:272:5: replace get_daily_entitlement -> (i128, u32) with (1, 0)
+contracts/protection-pool/src/storage.rs:272:5: replace get_daily_entitlement -> (i128, u32) with (1, 1)
+contracts/protection-pool/src/storage.rs:272:5: replace get_daily_entitlement -> (i128, u32) with (-1, 0)
+contracts/protection-pool/src/storage.rs:272:5: replace get_daily_entitlement -> (i128, u32) with (-1, 1)
+contracts/protection-pool/src/storage.rs:277:17: replace != with == in get_daily_entitlement
+contracts/protection-pool/src/storage.rs:295:5: replace set_daily_entitlement with ()
+contracts/protection-pool/src/storage.rs:313:5: replace get_vault -> Option<Address> with None
+contracts/protection-pool/src/storage.rs:317:5: replace set_vault with ()
+contracts/protection-pool/src/storage.rs:321:5: replace get_treasury -> Option<Address> with None
+contracts/protection-pool/src/storage.rs:325:5: replace set_treasury with ()
+contracts/protection-pool/src/storage.rs:330:5: replace get_deploy_bps -> i128 with 0
+contracts/protection-pool/src/storage.rs:330:5: replace get_deploy_bps -> i128 with 1
+contracts/protection-pool/src/storage.rs:330:5: replace get_deploy_bps -> i128 with -1
+contracts/protection-pool/src/storage.rs:337:5: replace set_deploy_bps with ()
+contracts/protection-pool/src/storage.rs:341:5: replace get_total_deployed_shares -> i128 with 0
+contracts/protection-pool/src/storage.rs:341:5: replace get_total_deployed_shares -> i128 with 1
+contracts/protection-pool/src/storage.rs:341:5: replace get_total_deployed_shares -> i128 with -1
+contracts/protection-pool/src/storage.rs:348:5: replace set_total_deployed_shares with ()
+contracts/protection-pool/src/storage.rs:354:5: replace get_total_deployed_xlm -> i128 with 0
+contracts/protection-pool/src/storage.rs:354:5: replace get_total_deployed_xlm -> i128 with 1
+contracts/protection-pool/src/storage.rs:354:5: replace get_total_deployed_xlm -> i128 with -1
+contracts/protection-pool/src/storage.rs:361:5: replace set_total_deployed_xlm with ()
+contracts/protection-pool/src/storage.rs:367:5: replace get_total_extracted_yield -> i128 with 0
+contracts/protection-pool/src/storage.rs:367:5: replace get_total_extracted_yield -> i128 with 1
+contracts/protection-pool/src/storage.rs:367:5: replace get_total_extracted_yield -> i128 with -1
+contracts/protection-pool/src/storage.rs:374:5: replace set_total_extracted_yield with ()
+contracts/protection-pool/src/storage.rs:392:5: replace get_stake -> Option<StakeRecord> with None
+contracts/protection-pool/src/storage.rs:382:5: replace bump_instance_ttl with ()
+contracts/protection-pool/src/storage.rs:396:5: replace set_stake with ()
+contracts/protection-pool/src/storage.rs:408:5: replace get_claim -> Option<Claim> with None
+contracts/protection-pool/src/storage.rs:414:5: replace set_claim with ()
+contracts/protection-pool/src/storage.rs:426:5: replace get_override -> Option<OverrideRequest> with None
+contracts/protection-pool/src/storage.rs:432:5: replace set_override with ()
+contracts/protection-pool/src/storage.rs:444:5: replace remove_override with ()
+contracts/protection-pool/src/storage.rs:454:5: replace get_points_balance -> i128 with 0
+contracts/protection-pool/src/storage.rs:454:5: replace get_points_balance -> i128 with 1
+contracts/protection-pool/src/storage.rs:454:5: replace get_points_balance -> i128 with -1
+contracts/protection-pool/src/storage.rs:479:5: replace is_approval_revoked -> bool with true
+contracts/protection-pool/src/storage.rs:461:5: replace set_points_balance with ()
+contracts/protection-pool/src/storage.rs:479:5: replace is_approval_revoked -> bool with false
+contracts/protection-pool/src/storage.rs:485:5: replace set_approval_revoked with ()
+contracts/protection-pool/src/types.rs:37:42: replace * with +
+contracts/protection-pool/src/types.rs:37:42: replace * with /
+contracts/protection-pool/src/types.rs:44:39: replace * with +
+contracts/protection-pool/src/types.rs:44:39: replace * with /
+contracts/protection-pool/src/types.rs:46:37: replace * with +
+contracts/protection-pool/src/types.rs:46:37: replace * with /
+contracts/protection-pool/src/types.rs:48:37: replace * with +
+contracts/protection-pool/src/types.rs:51:43: replace * with +
+contracts/protection-pool/src/types.rs:51:43: replace * with /
+contracts/protection-pool/src/types.rs:71:49: replace * with /
+contracts/protection-pool/src/types.rs:71:49: replace * with +
+contracts/protection-pool/src/types.rs:108:45: replace * with +
+contracts/protection-pool/src/types.rs:108:45: replace * with /
+contracts/protection-pool/src/types.rs:119:52: replace * with +
+contracts/protection-pool/src/vault.rs:187:5: replace liquid_balance -> i128 with 0
+contracts/protection-pool/src/vault.rs:187:5: replace liquid_balance -> i128 with 1
+contracts/protection-pool/src/types.rs:119:52: replace * with /
+contracts/protection-pool/src/vault.rs:187:5: replace liquid_balance -> i128 with -1
+contracts/protection-pool/src/vault.rs:195:28: replace < with > in require_liquidity
+contracts/protection-pool/src/vault.rs:195:5: replace require_liquidity -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/vault.rs:195:28: replace < with == in require_liquidity
+contracts/protection-pool/src/vault.rs:195:28: replace < with <= in require_liquidity
+contracts/protection-pool/src/vault.rs:221:5: replace yield_balance -> i128 with 0
+contracts/protection-pool/src/vault.rs:221:5: replace yield_balance -> i128 with 1
+contracts/protection-pool/src/vault.rs:221:5: replace yield_balance -> i128 with -1
+contracts/protection-pool/src/vault.rs:221:37: replace + with - in yield_balance
+contracts/protection-pool/src/vault.rs:221:37: replace + with * in yield_balance
+contracts/protection-pool/src/vault.rs:222:51: replace + with - in yield_balance
+contracts/protection-pool/src/vault.rs:222:51: replace + with * in yield_balance
+contracts/protection-pool/src/vault.rs:223:14: replace > with == in yield_balance
+contracts/protection-pool/src/vault.rs:223:14: replace > with < in yield_balance
+contracts/protection-pool/src/vault.rs:224:15: replace - with + in yield_balance
+contracts/protection-pool/src/vault.rs:224:15: replace - with / in yield_balance
+contracts/protection-pool/src/vault.rs:240:5: replace deployment_ratio_bps -> i128 with 0
+contracts/protection-pool/src/vault.rs:240:5: replace deployment_ratio_bps -> i128 with 1
+contracts/protection-pool/src/vault.rs:240:5: replace deployment_ratio_bps -> i128 with -1
+contracts/protection-pool/src/vault.rs:241:21: replace <= with > in deployment_ratio_bps
+contracts/protection-pool/src/vault.rs:244:67: replace / with % in deployment_ratio_bps
+contracts/protection-pool/src/vault.rs:244:67: replace / with * in deployment_ratio_bps
+contracts/protection-pool/src/vault.rs:244:42: replace * with + in deployment_ratio_bps
+contracts/protection-pool/src/vault.rs:244:42: replace * with / in deployment_ratio_bps
+contracts/protection-pool/src/vault.rs:257:5: replace set_vault -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/vault.rs:260:48: replace > with == in set_vault
+contracts/protection-pool/src/vault.rs:260:48: replace > with < in set_vault
+contracts/protection-pool/src/vault.rs:260:48: replace > with >= in set_vault
+contracts/protection-pool/src/vault.rs:269:5: replace set_treasury -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/vault.rs:291:5: replace set_deploy_bps -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/vault.rs:294:12: replace < with == in set_deploy_bps
+contracts/protection-pool/src/vault.rs:294:12: replace < with > in set_deploy_bps
+contracts/protection-pool/src/vault.rs:294:12: replace < with <= in set_deploy_bps
+contracts/protection-pool/src/vault.rs:297:12: replace > with == in set_deploy_bps
+contracts/protection-pool/src/vault.rs:297:12: replace > with < in set_deploy_bps
+contracts/protection-pool/src/vault.rs:297:12: replace > with >= in set_deploy_bps
+contracts/protection-pool/src/vault.rs:361:5: replace authorize_deposit with ()
+contracts/protection-pool/src/vault.rs:446:5: replace deploy_to_vault -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/vault.rs:446:5: replace deploy_to_vault -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/vault.rs:446:5: replace deploy_to_vault -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/vault.rs:450:15: replace <= with > in deploy_to_vault
+contracts/protection-pool/src/vault.rs:456:15: replace < with == in deploy_to_vault
+contracts/protection-pool/src/vault.rs:456:15: replace < with > in deploy_to_vault
+contracts/protection-pool/src/vault.rs:456:15: replace < with <= in deploy_to_vault
+contracts/protection-pool/src/vault.rs:463:63: replace / with % in deploy_to_vault
+contracts/protection-pool/src/vault.rs:463:63: replace / with * in deploy_to_vault
+contracts/protection-pool/src/vault.rs:463:32: replace * with + in deploy_to_vault
+contracts/protection-pool/src/vault.rs:463:32: replace * with / in deploy_to_vault
+contracts/protection-pool/src/vault.rs:464:30: replace > with == in deploy_to_vault
+contracts/protection-pool/src/vault.rs:464:30: replace > with < in deploy_to_vault
+contracts/protection-pool/src/vault.rs:464:30: replace > with >= in deploy_to_vault
+contracts/protection-pool/src/vault.rs:464:21: replace + with - in deploy_to_vault
+contracts/protection-pool/src/vault.rs:464:21: replace + with * in deploy_to_vault
+contracts/protection-pool/src/vault.rs:471:24: replace < with == in deploy_to_vault
+contracts/protection-pool/src/vault.rs:471:24: replace < with > in deploy_to_vault
+contracts/protection-pool/src/vault.rs:471:24: replace < with <= in deploy_to_vault
+contracts/protection-pool/src/vault.rs:471:15: replace - with + in deploy_to_vault
+contracts/protection-pool/src/vault.rs:471:15: replace - with / in deploy_to_vault
+contracts/protection-pool/src/vault.rs:495:72: replace - with + in deploy_to_vault
+contracts/protection-pool/src/vault.rs:495:72: replace - with / in deploy_to_vault
+contracts/protection-pool/src/vault.rs:496:22: replace < with == in deploy_to_vault
+contracts/protection-pool/src/vault.rs:496:22: replace < with > in deploy_to_vault
+contracts/protection-pool/src/vault.rs:496:22: replace < with <= in deploy_to_vault
+contracts/protection-pool/src/vault.rs:500:85: replace + with - in deploy_to_vault
+contracts/protection-pool/src/vault.rs:500:85: replace + with * in deploy_to_vault
+contracts/protection-pool/src/vault.rs:501:55: replace + with - in deploy_to_vault
+contracts/protection-pool/src/vault.rs:501:55: replace + with * in deploy_to_vault
+contracts/protection-pool/src/vault.rs:531:5: replace auto_deploy_liquidity -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/vault.rs:531:5: replace auto_deploy_liquidity -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/vault.rs:531:5: replace auto_deploy_liquidity -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/vault.rs:535:24: replace <= with > in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:535:45: replace <= with > in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:542:24: replace - with + in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:542:24: replace - with / in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:543:13: replace == with != in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:548:63: replace / with % in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:548:63: replace / with * in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:548:32: replace * with + in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:548:32: replace * with / in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:549:25: replace - with + in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:549:25: replace - with / in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:550:13: replace == with != in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:563:24: replace < with == in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:563:24: replace < with > in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:563:24: replace < with <= in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:563:15: replace - with / in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:569:52: replace / with % in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:569:52: replace / with * in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:569:34: replace * with + in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:569:34: replace * with / in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:571:74: replace / with % in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:571:74: replace / with * in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:571:25: replace * with + in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:571:25: replace * with / in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:571:44: replace - with + in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:571:44: replace - with / in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:590:72: replace - with + in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:590:72: replace - with / in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:591:22: replace < with == in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:591:22: replace < with > in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:591:22: replace < with <= in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:595:61: replace + with - in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:595:61: replace + with * in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:596:55: replace + with - in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:596:55: replace + with * in auto_deploy_liquidity
+contracts/protection-pool/src/vault.rs:626:5: replace redeem -> Result<(i128, i128), PoolError> with Ok((0, 0))
+contracts/protection-pool/src/vault.rs:626:5: replace redeem -> Result<(i128, i128), PoolError> with Ok((0, 1))
+contracts/protection-pool/src/vault.rs:626:5: replace redeem -> Result<(i128, i128), PoolError> with Ok((0, -1))
+contracts/protection-pool/src/vault.rs:626:5: replace redeem -> Result<(i128, i128), PoolError> with Ok((1, 0))
+contracts/protection-pool/src/vault.rs:626:5: replace redeem -> Result<(i128, i128), PoolError> with Ok((1, 1))
+contracts/protection-pool/src/vault.rs:626:5: replace redeem -> Result<(i128, i128), PoolError> with Ok((1, -1))
+contracts/protection-pool/src/vault.rs:626:5: replace redeem -> Result<(i128, i128), PoolError> with Ok((-1, 0))
+contracts/protection-pool/src/vault.rs:626:5: replace redeem -> Result<(i128, i128), PoolError> with Ok((-1, 1))
+contracts/protection-pool/src/vault.rs:626:5: replace redeem -> Result<(i128, i128), PoolError> with Ok((-1, -1))
+contracts/protection-pool/src/vault.rs:626:15: replace <= with > in redeem
+contracts/protection-pool/src/vault.rs:630:24: replace <= with > in redeem
+contracts/protection-pool/src/vault.rs:633:15: replace > with == in redeem
+contracts/protection-pool/src/vault.rs:633:15: replace > with < in redeem
+contracts/protection-pool/src/vault.rs:633:15: replace > with >= in redeem
+contracts/protection-pool/src/vault.rs:638:49: replace / with % in redeem
+contracts/protection-pool/src/vault.rs:638:49: replace / with * in redeem
+contracts/protection-pool/src/vault.rs:638:40: replace * with + in redeem
+contracts/protection-pool/src/vault.rs:638:40: replace * with / in redeem
+contracts/protection-pool/src/vault.rs:650:44: replace - with + in redeem
+contracts/protection-pool/src/vault.rs:650:44: replace - with / in redeem
+contracts/protection-pool/src/vault.rs:651:21: replace < with == in redeem
+contracts/protection-pool/src/vault.rs:651:21: replace < with > in redeem
+contracts/protection-pool/src/vault.rs:651:21: replace < with <= in redeem
+contracts/protection-pool/src/vault.rs:655:61: replace - with + in redeem
+contracts/protection-pool/src/vault.rs:655:61: replace - with / in redeem
+contracts/protection-pool/src/vault.rs:656:55: replace - with + in redeem
+contracts/protection-pool/src/vault.rs:656:55: replace - with / in redeem
+contracts/protection-pool/src/vault.rs:658:21: replace < with == in redeem
+contracts/protection-pool/src/vault.rs:658:21: replace < with > in redeem
+contracts/protection-pool/src/vault.rs:658:21: replace < with <= in redeem
+contracts/protection-pool/src/vault.rs:670:41: replace - with + in redeem
+contracts/protection-pool/src/vault.rs:670:41: replace - with / in redeem
+contracts/protection-pool/src/vault.rs:700:5: replace provide_liquidity -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/vault.rs:700:5: replace provide_liquidity -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/vault.rs:700:5: replace provide_liquidity -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/vault.rs:732:5: replace ensure_liquidity -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/vault.rs:732:5: replace ensure_liquidity -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/vault.rs:732:5: replace ensure_liquidity -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/vault.rs:745:45: replace - with + in ensure_liquidity
+contracts/protection-pool/src/vault.rs:745:45: replace - with / in ensure_liquidity
+contracts/protection-pool/src/vault.rs:757:9: replace / with % in ensure_liquidity
+contracts/protection-pool/src/vault.rs:757:9: replace / with * in ensure_liquidity
+contracts/protection-pool/src/vault.rs:756:50: replace * with + in ensure_liquidity
+contracts/protection-pool/src/vault.rs:756:50: replace * with / in ensure_liquidity
+contracts/protection-pool/src/vault.rs:758:38: replace - with + in ensure_liquidity
+contracts/protection-pool/src/vault.rs:758:38: replace - with / in ensure_liquidity
+contracts/protection-pool/src/vault.rs:762:18: replace == with != in ensure_liquidity
+contracts/protection-pool/src/vault.rs:766:24: replace <= with > in ensure_liquidity
+contracts/protection-pool/src/vault.rs:766:45: replace <= with > in ensure_liquidity
+contracts/protection-pool/src/vault.rs:778:54: replace / with % in ensure_liquidity
+contracts/protection-pool/src/vault.rs:778:54: replace / with * in ensure_liquidity
+contracts/protection-pool/src/vault.rs:778:36: replace * with + in ensure_liquidity
+contracts/protection-pool/src/vault.rs:778:36: replace * with / in ensure_liquidity
+contracts/protection-pool/src/vault.rs:779:53: replace / with % in ensure_liquidity
+contracts/protection-pool/src/vault.rs:779:53: replace / with * in ensure_liquidity
+contracts/protection-pool/src/vault.rs:779:37: replace * with + in ensure_liquidity
+contracts/protection-pool/src/vault.rs:779:37: replace * with / in ensure_liquidity
+contracts/protection-pool/src/vault.rs:780:85: replace / with % in ensure_liquidity
+contracts/protection-pool/src/vault.rs:780:85: replace / with * in ensure_liquidity
+contracts/protection-pool/src/vault.rs:780:36: replace * with + in ensure_liquidity
+contracts/protection-pool/src/vault.rs:780:36: replace * with / in ensure_liquidity
+contracts/protection-pool/src/vault.rs:780:55: replace - with + in ensure_liquidity
+contracts/protection-pool/src/vault.rs:780:55: replace - with / in ensure_liquidity
+contracts/protection-pool/src/vault.rs:807:5: replace extract_yield -> Result<i128, PoolError> with Ok(0)
+contracts/protection-pool/src/vault.rs:807:5: replace extract_yield -> Result<i128, PoolError> with Ok(1)
+contracts/protection-pool/src/vault.rs:807:5: replace extract_yield -> Result<i128, PoolError> with Ok(-1)
+contracts/protection-pool/src/vault.rs:815:40: replace > with == in extract_yield
+contracts/protection-pool/src/vault.rs:815:40: replace > with < in extract_yield
+contracts/protection-pool/src/vault.rs:816:22: replace - with + in extract_yield
+contracts/protection-pool/src/vault.rs:816:22: replace - with / in extract_yield
+contracts/protection-pool/src/vault.rs:821:21: replace > with == in extract_yield
+contracts/protection-pool/src/vault.rs:821:21: replace > with < in extract_yield
+contracts/protection-pool/src/vault.rs:824:53: replace + with - in extract_yield
+contracts/protection-pool/src/vault.rs:824:53: replace + with * in extract_yield
+contracts/protection-pool/src/vault.rs:837:21: replace > with == in extract_yield
+contracts/protection-pool/src/vault.rs:837:21: replace > with < in extract_yield
+contracts/protection-pool/src/vault.rs:837:21: replace > with >= in extract_yield
+contracts/protection-pool/src/vault.rs:851:5: replace withdraw_yield -> Result<(), PoolError> with Ok(())
+contracts/protection-pool/src/vault.rs:854:15: replace <= with > in withdraw_yield
+contracts/protection-pool/src/vault.rs:859:15: replace > with == in withdraw_yield
+contracts/protection-pool/src/vault.rs:859:15: replace > with < in withdraw_yield
+contracts/protection-pool/src/vault.rs:859:15: replace > with >= in withdraw_yield
+contracts/protection-pool/src/vault.rs:862:15: replace > with == in withdraw_yield
+contracts/protection-pool/src/vault.rs:862:15: replace > with < in withdraw_yield
+contracts/protection-pool/src/vault.rs:862:15: replace > with >= in withdraw_yield
+contracts/protection-pool/src/vault.rs:866:85: replace + with - in withdraw_yield
+contracts/protection-pool/src/vault.rs:866:85: replace + with * in withdraw_yield
