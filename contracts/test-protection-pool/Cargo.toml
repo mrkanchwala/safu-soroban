@@ -1,0 +1,33 @@
+[package]
+name = "test-protection-pool"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+protection-pool = { path = "../protection-pool" }
+
+# TODO — UNRESOLVED, and deliberately not guessed.
+#
+# The test contract calls `komet::create_contract(&env, &addr, &hash)` to
+# deploy the contract under test, per Komet's documented example. That helper
+# lives in a `komet` support crate whose exact source could not be confirmed:
+# it is not obviously on crates.io, and the reference example could not be
+# read directly from its repository under this workspace's isolation rule.
+#
+# Guessing a git URL or crate name for a third-party dependency is a
+# supply-chain risk — a wrong or typosquatted reference would be fetched and
+# built. So this line stays commented and the build fails loudly and honestly
+# rather than pulling something unverified.
+#
+# To resolve: read the Komet example's own Cargo.toml and copy the exact
+# dependency line here. One of:
+#   komet = "<version>"
+#   komet = { git = "<the official RV repository>", tag = "<pinned tag>" }
+#
+# komet = ...

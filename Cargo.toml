@@ -2,6 +2,13 @@
 resolver = "2"
 members = ["contracts/protection-pool"]
 
+# test-protection-pool is Komet's property-test contract. It is EXCLUDED from
+# the workspace on purpose, not forgotten: it depends on Komet's own support
+# crate, which the normal toolchain does not have, so making it a member would
+# break `cargo test --workspace` and redden the CI badge that rust-toolchain.toml
+# is pinned to protect. Komet compiles it separately via its own kasmer.json.
+exclude = ["contracts/test-protection-pool"]
+
 # Apache-2.0 chosen 2026-08-19 for SCF #44. The Build Award submission criteria
 # require "a clear plan to open-source" any smart contracts; Apache-2.0 is
 # OSI-approved, so the requirement is met outright rather than by argument.

@@ -1,39 +1,43 @@
 # Komet (Runtime Verification) — MANUAL TRIGGER ONLY.
 #
-# Komet is a Soroban fuzzing + symbolic-verification tool built on the
-# K framework. It appears on the SCF Audit Bank intake form's list of accepted
-# security tooling, which is why it is worth establishing whether it runs
-# against this contract.
+# Komet is a Soroban fuzzing + symbolic-verification tool built on the K
+# framework, supported by the Stellar Foundation. It appears on the SCF Audit
+# Bank intake form's list of accepted security tooling.
 #
-# WHY A GITHUB RUNNER RATHER THAN LOCAL OR THE VPS
-#   - The installer is `bash <(curl https://kframework.org/install)` pulling in
-#     Nix and the full K/KWasm toolchain — real unaudited third-party install
-#     surface that should not touch a workstation or a box running production.
-#     A runner is disposable and starts clean.
-#   - Runners are x86_64, which matches what the K toolchain actually ships.
-#     An arm64 laptop result would not generalise.
-#   - The K installer refuses to run as root (its own safety check). The
-#     `runner` user is already non-root, so that is satisfied for free.
+# WHAT KOMET ACTUALLY DOES (it is not a scanner)
+# Komet runs property tests written as a SECOND contract that calls the one
+# under test. `komet test` fuzzes those properties over many random inputs;
+# `komet prove` symbolically executes them, establishing the property for ALL
+# inputs rather than sampled ones. The properties live in
+# `contracts/test-protection-pool`, and `kasmer.json` there names the contract
+# to compile and deploy.
 #
-# WHY THIS IS A PROBE, NOT AN ATTEMPT AT RESULTS
-# Komet is not a push-button scanner. Unlike Scout it does not analyse by
-# compiling with lints; it consumes the built WASM and verifies properties
-# that a human writes. So the first question is narrow and cheap:
+# WHY A GITHUB RUNNER
+# The installer is a curl-pipe-to-bash pulling Nix and the full K/KWasm
+# toolchain — real unaudited install surface that should not touch a
+# workstation or a box running production. Runners are disposable, start
+# clean, and are x86_64, which matches what the K toolchain ships.
 #
-#     does the toolchain still install on a clean machine in 2026, and what
-#     does its CLI actually offer?
+# ---------------------------------------------------------------------------
+# CORRECTIONS FROM PROBE RUN 33475575437 — all three were this file's bugs,
+# and the first two were invisible because the third hid them.
 #
-# Guessing invocations burns runs. This job installs, records --version and
-# --help verbatim, and only then attempts a build against the contract. What
-# it learns shapes whether writing specs is worth a session.
-#
-# Structural reason for cautious optimism: Scout failed because it compiles
-# the crate itself against `wasm32-unknown-unknown`, which `soroban-sdk` 27
-# rejects. Komet consumes an already-built WASM, and this repo builds cleanly
-# to `wasm32v1-none` — so Scout's specific blocker should not apply. That is a
-# reason to try, not a prediction that it works.
+#  1. `kup` is NOT at `$HOME/.kup/bin`. The K installer installs Nix, then
+#     installs kup INTO THE NIX PROFILE. The right paths are
+#     `~/.nix-profile/bin` and `/nix/var/nix/profiles/default/bin`.
+#  2. Each GitHub step is a fresh shell, so `export PATH` does not carry.
+#     Nix's own installer says as much: source
+#     `/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh`. Anything
+#     later steps need goes into `$GITHUB_PATH`.
+#  3. `continue-on-error` plus `set +e` made a FAILED install report success.
+#     The probe showed every step green while `komet: command not found` sat
+#     in the log — precisely the false-green this repo's Scout workflow was
+#     rewritten to avoid, reintroduced here. Installation is now verified by
+#     running the binary, and the job FAILS if it is absent. A green tick must
+#     mean the tool actually ran.
+# ---------------------------------------------------------------------------
 
-name: Komet probe (manual)
+name: Komet (manual)
 
 on:
   workflow_dispatch:
@@ -43,115 +47,132 @@ permissions:
 
 jobs:
   komet:
-    name: Komet toolchain probe
+    name: Komet property tests
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 
       - name: Environment
         run: |
-          uname -a
-          whoami
+          uname -m
           df -h / | tail -1
           free -m | head -2
 
-      # ---- Step 1: does the toolchain install at all? ----
-      - name: Install K framework + Komet
+      - name: Install Nix + kup + Komet
         id: install
-        continue-on-error: true
         run: |
-          set +e
-          echo "== kframework installer ==" | tee install.log
+          set -o pipefail
+          echo "== K framework installer ==" | tee install.log
           echo "y" | bash <(curl -fsSL https://kframework.org/install) 2>&1 | tee -a install.log
-          echo "installer_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
-          export PATH="$HOME/.kup/bin:$PATH"
-          echo "$HOME/.kup/bin" >> "$GITHUB_PATH"
+
+          # Nix's own instruction — each step is a new shell, so this must be
+          # sourced here AND the resulting paths exported to $GITHUB_PATH.
+          if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+            . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+          fi
+          export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
+
+          echo "== locating kup ==" | tee -a install.log
+          command -v kup | tee -a install.log || {
+            echo "kup not on PATH; searching" | tee -a install.log
+            ls -la "$HOME/.nix-profile/bin" 2>/dev/null | tee -a install.log
+            ls -la /nix/var/nix/profiles/default/bin 2>/dev/null | tee -a install.log
+          }
+
           echo "== kup install komet ==" | tee -a install.log
           kup install komet 2>&1 | tee -a install.log
-          echo "kup_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      # ---- Step 2: what does the CLI actually offer? ----
-      # Recorded verbatim: this is the information the probe exists to get.
-      - name: Komet version and CLI surface
-        id: cli
-        if: always()
-        continue-on-error: true
+          # Persist for later steps.
+          echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
+          echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"
+
+      # Deliberately NOT continue-on-error. If komet is not runnable there is
+      # nothing to report, and the job must say so rather than proceed green.
+      - name: Verify Komet is actually runnable
+        id: verify
         run: |
-          set +e
-          export PATH="$HOME/.kup/bin:$PATH"
+          set -o pipefail
           command -v komet | tee cli.log
           echo "== --version ==" | tee -a cli.log
           komet --version 2>&1 | tee -a cli.log
           echo "== --help ==" | tee -a cli.log
           komet --help 2>&1 | tee -a cli.log
-          echo "found=$(command -v komet >/dev/null && echo yes || echo no)" >> "$GITHUB_OUTPUT"
 
-      # ---- Step 3: build the contract WASM Komet would consume ----
-      - name: Build contract WASM
-        if: always()
+      - name: Run Komet property tests (fuzzing)
+        id: test
         continue-on-error: true
+        working-directory: contracts/test-protection-pool
         run: |
           set +e
-          rustup target add wasm32v1-none 2>&1 | tail -2
-          cargo install --locked stellar-cli --version 23.1.4 2>&1 | tail -3 || \
-            echo "stellar-cli install failed — falling back to plain cargo build"
-          stellar contract build 2>&1 | tee wasm.log | tail -10
-          ls -la target/wasm32v1-none/release/*.wasm 2>/dev/null | tee -a wasm.log
+          komet test 2>&1 | tee ../../komet-test.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      # ---- Step 4: attempt a run, whatever the CLI turned out to support ----
-      - name: Attempt Komet against the contract
-        id: run
-        if: always()
+      - name: Run Komet proofs (symbolic execution)
+        id: prove
         continue-on-error: true
+        working-directory: contracts/test-protection-pool
         run: |
           set +e
-          export PATH="$HOME/.kup/bin:$PATH"
-          if ! command -v komet >/dev/null; then
-            echo "komet not installed — nothing to attempt" | tee komet.log
-            exit 0
-          fi
-          cd contracts/protection-pool
-          for sub in build test; do
-            echo "== komet $sub ==" | tee -a ../../komet.log
-            komet "$sub" 2>&1 | tee -a ../../komet.log
-            echo "-- exit ${PIPESTATUS[0]} --" | tee -a ../../komet.log
-          done
+          komet prove 2>&1 | tee ../../komet-prove.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Summarise
         if: always()
         run: |
           {
-            echo "## Komet probe"
+            echo "## Komet"
             echo ""
-            echo "| Stage | Result |"
+            echo "| Stage | Exit |"
             echo "|---|---|"
-            echo "| K installer | \`${{ steps.install.outputs.installer_exit }}\` |"
-            echo "| kup install komet | \`${{ steps.install.outputs.kup_exit }}\` |"
-            echo "| komet on PATH | \`${{ steps.cli.outputs.found }}\` |"
+            echo "| \`komet test\` (fuzzing) | \`${{ steps.test.outputs.exit_code }}\` |"
+            echo "| \`komet prove\` (symbolic) | \`${{ steps.prove.outputs.exit_code }}\` |"
             echo ""
-            echo "### CLI surface"
+            echo "### CLI"
             echo '```'
-            head -60 cli.log 2>/dev/null || echo "(none)"
-            echo '```'
-            echo ""
-            echo "### Attempt against the contract"
-            echo '```'
-            tail -40 komet.log 2>/dev/null || echo "(not attempted)"
+            head -40 cli.log 2>/dev/null || echo "(komet not runnable)"
             echo '```'
             echo ""
-            echo "**This is a probe.** A failure here answers a question rather"
-            echo "than blocking anything: the contract's assurance does not depend"
-            echo "on Komet, and no result from it is being claimed anywhere."
+            echo "### test"
+            echo '```'
+            tail -40 komet-test.log 2>/dev/null || echo "(not run)"
+            echo '```'
+            echo ""
+            echo "### prove"
+            echo '```'
+            tail -40 komet-prove.log 2>/dev/null || echo "(not run)"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: komet-probe
+          name: komet-evidence
           path: |
             install.log
             cli.log
-            wasm.log
-            komet.log
+            komet-test.log
+            komet-prove.log
           if-no-files-found: warn
+
+      - name: Verdict — did Komet actually verify anything?
+        if: always()
+        run: |
+          if [ ! -s komet-test.log ] && [ ! -s komet-prove.log ]; then
+            echo "### Verdict: NOTHING VERIFIED" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Komet produced no output — nothing was verified."
+            exit 1
+          fi
+          if grep -qiE "error|could not compile|command not found|no such file" komet-test.log komet-prove.log 2>/dev/null; then
+            {
+              echo ""
+              echo "### Verdict: NOTHING VERIFIED"
+              echo ""
+              echo "Komet ran but did not complete a property check. Treat this as"
+              echo "**no result**, not a pass — an absent finding is not a clean"
+              echo "finding, and nothing here may be cited as one."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Komet did not complete a property check."
+            exit 1
+          fi
+          echo "### Verdict: properties checked — results above are real" >> "$GITHUB_STEP_SUMMARY"
