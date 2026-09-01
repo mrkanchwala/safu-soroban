@@ -380,13 +380,41 @@ a second with `RuntimeError: Couldn't find 'stellar' executable` — the log gre
 looked for `^error`, which `RuntimeError:` does not match. An absent finding is
 not a clean finding and must never be cited as one.
 
-### Status
+### Result — 3 properties, 100 examples each, all passed
 
-**No Komet result is claimed in this document yet.** The environment is proven
-(toolchain verified, both harness contracts build) but the property tests had
-not produced a completed result at the time of writing. This section will carry
-the numbers once they exist; until then Komet is listed as tooling in use, not
-as evidence.
+```
+Processing contract: test_protection_pool
+Discovered 3 test functions:
+
+test_solvency_invariant        100/100  0:00:20  Passed
+test_totals_never_negative     100/100  0:00:19  Passed
+test_stake_accounting_is_exact 100/100  0:00:20  Passed
+```
+
+Exit code 0 with 300 executed examples. Run 2026-09-01 against Komet
+`a078e296` (v0.1.89), stellar-cli 28.0.0, rustc 1.96.0, target
+`wasm32v1-none`, soroban-sdk 27.0.6.
+
+`komet prove` (symbolic execution) is a separate, longer run and is not
+claimed here.
+
+### Disclosure — what exactly was verified
+
+**Komet verified an unoptimized build, not the binary that would deploy.**
+`stellar contract build`'s optimizer emits a Wasm DataCount section (`0xc`,
+bulk-memory / Wasm 2.0) that Komet's MVP-only Wasm reader rejects outright, so
+the contracts were built with the documented `--optimize=false` flag. The
+optimizer performs size optimization and does not change semantics, and the
+unoptimized module is the closer artifact to the source — but the distinction
+is stated rather than glossed.
+
+A second, smaller adaptation: Komet 0.1.89 reads the contract spec field as
+`type_` while stellar-cli 28 emits `type`, so a wrapper renamed that one JSON
+key. It touches no contract, no Wasm, and no verification logic.
+
+Komet's own documented target is `wasm32-unknown-unknown`; `soroban-sdk` 27
+requires `wasm32v1-none`. Both adaptations exist because of that drift, not
+because of anything in this contract.
 
 ## 6. Manual V8-parity verification — 4 escalating passes
 
@@ -465,12 +493,14 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
 
 ## 8. What this does NOT cover — the honest ceiling
 
-- **No *completed* formal/symbolic verification result yet.** V8's Solidity
-  contract has 10/10 Halmos properties proven with zero counterexamples. The
-  Soroban equivalent is **Komet**, and it is now wired up (§5b) rather than
-  absent — but it has not yet produced a citable result, so nothing here rests
-  on it. Certora Sunbeam remains the heavier answer, deliberately deferred to
-  Tranche 3's SCF-funded audit.
+- **Symbolic verification is only partially covered.** V8's Solidity contract
+  has 10/10 Halmos properties proven with zero counterexamples. The Soroban
+  equivalent is **Komet**: its *fuzzing* mode has now run and passed 3
+  properties at 100 examples each (§5b), but that is property-based testing,
+  not proof. `komet prove` — the symbolic mode that establishes a property for
+  all inputs — is not claimed here. Note also that Komet consumed an
+  unoptimized build; see the disclosure in §5b. Certora Sunbeam remains the
+  heavier answer, deliberately deferred to Tranche 3's SCF-funded audit.
 - **No external human audit yet.** Everything above is internal
   (self-run tooling + manual review), which is why Tranche 3 budgets a
   real external audit through the SCF Audit Bank.
