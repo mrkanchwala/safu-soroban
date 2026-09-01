@@ -1,20 +1,26 @@
-# Testing Methodology — ProtectionPool (SCF #44 Tranche 1)
+# Testing Methodology — ProtectionPool (SCF #44, Tranches 1-3)
 
 This is the answer to "what did we do to verify this contract" — every
-method applied, why, and what it found. Scope is code-level verification
-only (this contract has not been deployed anywhere yet — see
-`README.md`'s "Known open items"). All numbers below are reproducible
-with the commands in each section.
+method applied, why, and what it found. Scope is code-level verification.
+The Tranche 2 code is **live on Stellar testnet** at
+`CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB` carrying real
+activity; the merged Tranche 3 tree is **not deployed anywhere yet** and its
+mainnet deploy follows the SCF-funded audit. See `README.md`. All numbers below
+are reproducible with the commands in each section.
+
+**Last re-measured 2026-09-01** against the merged Tranche 3 tree (WASM
+`2cec7e749d46b96a392be85dd284b8a988261ab7716b2218c7a5f39bbe2162db`): unit tests,
+coverage, the full-workspace mutation regression, clippy and `cargo audit`.
 
 **Updated 2026-08-17 (Tranche 2 + 7a audit)** — this file previously described
 Tranche 1 only. T2 added D1 (on-chain Ed25519 oracle approval verification),
 D2 (DeFindex vault yield deployment, `src/vault.rs`), atomic oracle rotation,
 and the 7a audit fixes. Concretely, since the numbers below were last measured:
-- **Unit tests: 250 passing** (was 184 at T1, 238 after the T2 merge) — §1's count is updated below
-- **Error variants: 73** (was 72) — D1 appended 73-76, D2 appended 80-92, and
-  the 7a audit appended `Paused = 93` when `require_not_paused` was converted
-  from the last surviving bare `panic!`. Codes are public ABI and are never
-  renumbered
+- **Unit tests: 278 passing** (184 at T1, 238 after the T2 merge, 250 after the
+  T2 mutation-gap tests, 278 after the Tranche 3 merge) — §1's count is updated below
+- **Error variants: 77**, highest code `97` (was 72 pre-T2) — D1, D2, the 7a
+  audit and the Tranche 3 flags each appended. Codes are public ABI and are
+  never renumbered
 - **`initialize` no longer exists** — configuration moved to `__constructor`
   (7a audit) to close the deploy→init front-running window. See README's
   "Deploy-time arguments"
@@ -48,7 +54,7 @@ a full-contract review, independent of the new mechanism (see §7 for
 what they were). This update re-measured every section below against the
 new code rather than leaving the 2026-07-15 numbers in place unverified.
 
-## 1. Unit tests — 250 passing (up from 238; 184 at Tranche 1)
+## 1. Unit tests — 278 passing (up from 250; 184 at Tranche 1)
 
 ```bash
 cargo test --package protection-pool
@@ -68,7 +74,7 @@ Split by mechanic in `src/test/`:
 
 16 pre-existing tests were updated for the new approval-gated flow (the gate no longer auto-activates a claim); none were weakened — 2 of the 16 had been silently pinning bugs as "expected" values, corrected with the bug fix rather than left inconsistent.
 
-## 2. Coverage — 98.40% line / 98.11% region / 97.28% function (re-measured 2026-08-25, after the Tranche 2 mutation-gap tests)
+## 2. Coverage — 98.25% line / 97.88% region / 97.41% function (re-measured 2026-09-01 on the merged Tranche 3 tree)
 
 ```bash
 cargo llvm-cov --package protection-pool --summary-only
@@ -77,15 +83,21 @@ cargo llvm-cov --package protection-pool --summary-only
 | File | Line % | Notes |
 |---|---|---|
 | `admin.rs` | 96.95% | |
-| `claim.rs` | 98.76% | largest file — claim lifecycle + override flow + approval/expiry + D1 oracle verification |
-| `lib.rs` | 99.21% | thin entrypoint wrappers |
-| `stake.rs` | 95.00% | |
+| `claim.rs` | 98.55% | largest file — claim lifecycle + override flow + approval/expiry + D1 oracle verification |
+| `lib.rs` | 99.25% | thin entrypoint wrappers |
+| `stake.rs` | 95.03% | |
 | `storage.rs` | 99.60% | |
 | `test/common.rs` | 100% | shared test setup |
 | `types.rs` | 0% | pure data/const declarations, no branches to cover |
-| `vault.rs` | 98.93% | D2 yield module, added in Tranche 2 |
+| `vault.rs` | 98.15% | D2 yield module (T2), extended by the Tranche 3 rebalancing flags |
 
-Overall line coverage improved on the prior 97.47% figure and function coverage on the prior 95.69% — the 12 tests added to close the Tranche 2 mutation gaps (§3) landed real assertions on previously-thin branches, not just incidental coverage. `vault.rs`, where 19 of the 22 surviving mutants sat, is the second-best-covered non-trivial file in the crate.
+**These figures moved slightly at the Tranche 3 merge and are stated as measured,
+not carried forward.** Line coverage went 98.40% -> 98.25% and region 98.11% ->
+97.88%, because Tranche 3 added contract code (`vault.rs` grew to 878 lines) faster
+than it added covering assertions; function coverage rose 97.28% -> 97.41%. The
+prior figures were measured 2026-08-25 on the Tranche 2 tree and no longer describe
+this one. `vault.rs`, where 19 of the 22 Tranche 2 survivors sat, remains among the
+best-covered non-trivial files in the crate.
 
 Industry guidance (checked 2026-07-15 against current smart-contract QA
 practice) targets ≥90% line coverage with ≥95% on fund-handling code
@@ -95,7 +107,7 @@ on every fund-handling file.
 **Coverage measures whether a line ran during tests — not whether a bug
 there would be caught. That distinction is exactly what §3 addresses.**
 
-## 3. Mutation testing — five campaigns; 100% of catchable mutants killed on Tranche 1, 389/390 on the Tranche 2 diff
+## 3. Mutation testing — six campaigns; the current figure is the full-workspace regression on the merged Tranche 3 tree: 805 mutants, 782 caught, 1 documented survivor
 
 ```bash
 cargo mutants --workspace
@@ -215,11 +227,13 @@ as the 2026-07-15 baseline:
 `.cargo/mutants.toml` excludes those four; 400 is what `cargo mutants`
 reports from this repository as-is.
 
-**The one survivor: `vault.rs:375`, replacing the body of
-`authorize_withdraw` with `()`.** That function's job is to request
+**The one survivor: `authorize_withdraw` replaced with `()`** — at
+`vault.rs:375` when measured on the Tranche 2 tree, and at **`vault.rs:418`** on
+the merged Tranche 3 tree, which added lines above it. Same function, same
+mutant, same reasoning. That function's job is to request
 authorization from the vault before withdrawing. The test environment
 approves all authorization automatically, so it cannot observe whether the
-request was made — deleting the function leaves all 250 tests passing. It
+request was made — deleting the function leaves all 278 tests passing. It
 is **not** an equivalent mutant. Four approaches were tried to close it,
 including scoped `mock_auths`, asserting on `env.auths()`, and hand-built
 `SorobanAuthorizationEntry` values under both credential types; all fail
@@ -230,9 +244,25 @@ vault directly — its authorization shape was captured from a live testnet
 `withdraw` on 2026-08-14 (see §6).
 
 **No contract source file was modified by any of this.** The Tranche 2
-WASM rebuilt from this tree hashes to
+WASM rebuilt from that tree hashes to
 `62ca8a24acf4fdb262ae479587924fb36bf5604421b895a0b8b7accfb5eaed3a` —
 byte-identical to the deployed contract.
+
+**2026-09-01, sixth campaign — the full-workspace regression on the merged
+Tranche 3 tree, and the figure that describes the current code.** The five
+campaigns above were each scoped to a tranche or a diff. This one runs
+`cargo mutants --workspace` over the whole crate after the Tranche 3 merge and the
+`soroban-sdk` 27.0.6 bump, because the merge re-anchored two exclusion entries and
+the earlier campaigns therefore no longer characterise this tree:
+
+**805 mutants — 782 caught, 1 missed, 22 unviable, 0 timeouts.**
+
+The single miss is the already-documented `authorize_withdraw` survivor described
+below, now at `vault.rs:418`. **Zero new defects; nothing that the ~28 tests added
+since the Tranche 2 measurement had silently un-killed.** Run unattended in a
+container on the team's Linux host, `-j 3`, completed `2026-09-01T07:25:08Z`. The
+raw `caught`/`missed`/`unviable` outputs and the machine-readable `outcomes.json`
+were retained off-host as evidence.
 
 ## 4. Fuzzing — 2 targets, 4 campaigns, 285,070 runs, zero crashes ever
 
@@ -288,11 +318,13 @@ is quoted for the current code, it is the 151,398 above, because the three
 July campaigns predate the D1/D2/7a changes and the `__constructor`
 migration.
 
-Soroban has no Halmos-equivalent symbolic verifier (Kani was researched
-and ruled infeasible for `no_std`/FFI-heavy `soroban-sdk` code; Certora
-Sunbeam is the real Soroban tool, deliberately deferred to Tranche 3's
-SCF-funded audit rather than self-run now). Fuzzing at this depth is the
-compensating control.
+Fuzzing at this depth was originally the compensating control for the absence of a
+Halmos equivalent on Soroban. **That gap is now closed: Komet has run and passed
+three properties (§5b).** Kani was researched and ruled infeasible for
+`no_std`/FFI-heavy `soroban-sdk` code, and Certora Sunbeam cannot run against this
+contract at all — see §5c. Fuzzing and Komet are complementary rather than
+substitutes: fuzzing covers long random action *sequences*, Komet covers
+properties over sampled inputs per call.
 
 ## 5. Static analysis & dependency scanning
 
@@ -302,13 +334,24 @@ cargo audit
 grep -rn "unsafe" --include="*.rs" src/
 ```
 
-- **clippy:** 0 warnings (re-checked 2026-07-31 against the typed-errors-
-  conversion code — unchanged from 2026-07-22; 3 unrelated pre-existing
-  doc-comment style warnings in a test file, not from this change).
-- **cargo-audit (RUSTSEC advisory database):** 0 CVEs (re-checked
-  2026-07-31 on the VPS, unchanged). 1 unmaintained-crate notice
-  (`paste`, a transitive `soroban-sdk` dependency — not directly
-  actionable).
+- **clippy:** 0 warnings in contract code (re-checked **2026-09-01** on the merged
+  Tranche 3 tree; the same 3 pre-existing `doc list item without indentation`
+  style warnings in a test file remain, unrelated to contract logic).
+- **cargo-audit (RUSTSEC advisory database):** **0 CVEs** across 194 crate
+  dependencies (re-checked **2026-09-01**, 1,235 advisories loaded). 1
+  unmaintained-crate notice — `paste` 1.0.15, RUSTSEC-2024-0436, a transitive
+  `soroban-sdk` dependency, not directly actionable.
+- **`cargo-scout-audit`: cannot analyse this crate — documented incompatibility,
+  not a clean result.** Scout 0.3.16 (the current release) builds against
+  `wasm32-unknown-unknown`; `soroban-sdk` 27 refuses that target on Rust 1.82+ and
+  requires `wasm32v1-none`, which this contract correctly uses, so the build script
+  panics before any contract source is reached and no detector runs. Scout still
+  prints a `0 Critical / 0 Medium / 0 Minor` row **beside `build failed`** — that
+  row is vacuous and must never be cited as a pass. Evidenced by GitHub Actions run
+  **33474500779**, deliberately RED, whose verdict step fails precisely because no
+  analysis happened. The separate `cargo-scout-audit-soroban` 0.2.2 crate was also
+  tried and is uninstallable on a current toolchain (it fails on `time` with
+  `--locked` and on `gix-url` with a fresh resolve).
 - **`unsafe` blocks:** zero, confirmed by grep.
 - **Arithmetic safety:** the contract uses plain `+`/`*`/`/` rather than
   `checked_*` throughout — verified safe because the workspace
@@ -424,6 +467,44 @@ Komet's own documented target is `wasm32-unknown-unknown`; `soroban-sdk` 27
 requires `wasm32v1-none`. Both adaptations exist because of that drift, not
 because of anything in this contract.
 
+## 5c. Formal verification — Certora Sunbeam (evaluated, NOT APPLICABLE)
+
+Sunbeam is Certora's formal-verification tool for Soroban and appears alongside
+Komet as accepted tooling. It was evaluated on 2026-09-01 and **cannot be run
+against this contract.** The reason is a hard version incompatibility in
+Certora's own spec library, not a local toolchain problem, so it is recorded
+here rather than left as an unanswered gap.
+
+**`cvlr-soroban` — Certora's Soroban spec library — pins `soroban-sdk = "22"`**
+at its current default-branch HEAD (`963110f`), which is the revision cargo
+resolves for the tutorials, since they pin no branch, tag or rev. This contract
+is on **`soroban-sdk` 27.0.6**. A caret bound of `"22"` accepts `>=22.0.0,
+<23.0.0`, so the two cannot coexist in one dependency graph, and the
+`cvlr-soroban` macros generate code against SDK 22's types.
+
+Two supporting observations from the same evaluation:
+
+- Certora's own `sunbeam-tutorials` build for `wasm32-unknown-unknown`.
+  `soroban-sdk` 27 refuses that target on Rust 1.82+ and requires
+  `wasm32v1-none` — the same target drift already documented for Scout in §5
+  and for Komet in §5b.
+- Those tutorials do not currently build on stable Rust at all. On rustc
+  1.98.0, `ethnum` 1.5.0 (a transitive dependency of `soroban-sdk` 22.0.7)
+  fails with `error[E0512]: cannot transmute between types of different sizes`.
+
+**Why no workaround was attempted.** Downgrading `soroban-sdk` to 22 to satisfy
+a verification tool would change the deployed bytecode and walk the contract
+back five major versions — a real risk traded for a tool row. The separate-crate
+trick used for the Komet harness (§5b) does not help either: that works because
+the harness compiles the same modules against the *same* SDK, whereas here the
+contract source calls SDK 27 APIs that SDK 22 does not have.
+
+**Method note.** The incompatibility was established by building **Certora's own
+tutorial example first**, in an isolated container, before pointing anything at
+this contract — so the failure is attributable to the tool's supported version
+range and not to anything here. That ordering is now the standing rule for
+evaluating any verification tool.
+
 ## 6. Manual V8-parity verification — 4 escalating passes
 
 Every mechanic was checked against the live `SAFUPoolV8.sol` source
@@ -491,6 +572,34 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
   oracle signer itself is Tranche 2 scope and doesn't exist yet; a
   design checklist for that future build was produced rather than
   treated as a T1 gap.
+- **Dependency audit review (2026-09-01).** SAFU's yield layer deposits into a
+  DeFindex vault which routes into Blend, so both are part of this contract's
+  real risk surface. The published audits of both were read and every finding
+  traced to SAFU's own integration points rather than noted in the abstract:
+  **OtterSec on DeFindex** (Mar 2025, 16 findings — 1 critical, 3 high),
+  **Certora on Blend v2** (security assessment + formal verification draft), and
+  **Code4rena on Blend** (21 findings — 3 high, 18 medium).
+
+  The finding class that propagates to SAFU is **share-price integrity at the
+  deposit boundary** — it recurs in all four reports (OtterSec `ADV-00`
+  b_rate precision manipulation, `ADV-03` share inflation; Certora `M-02`,
+  `L-03`; Code4rena `M-14`, `M-18`). SAFU already implements OtterSec's
+  prescribed remediation: `deploy_to_vault`/`auto_deploy_liquidity` both enforce
+  a `min_shares_out` floor and measure shares by balance delta rather than
+  trusting the vault's return value, and `auto_deploy_liquidity` derives its own
+  floor from the contract's prior position with a bounded slippage tolerance.
+
+  Most other findings do not reach this contract, for structural reasons worth
+  stating: flash-loan issues (never called), emissions and reward-zone issues
+  (SAFU holds vault shares and claims no emissions), and auction/liquidation
+  issues (SAFU is never a borrower and holds no debt at any layer).
+
+  **What the review did change:** the first deposit into a freshly created vault
+  is the one call with no prior position to derive a floor from, which makes it
+  a deploy-time operational gate rather than a code defect. It is recorded in
+  the Tranche 3 threat model alongside the DeFindex vault-configuration gate
+  (`upgradable = false`, `vault_fee = 0`), and
+  `scripts/atomic_pool_vault_deploy.sh` is where it is enforced.
 - **Solodit cross-reference** (Cyfrin's real-world finding database,
   50,000+ findings across 30+ audit firms): searched Access Control,
   Oracle, Reentrancy, Rounding, and Replay-Attack finding classes for
@@ -503,18 +612,26 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
 
 - **Symbolic verification is only partially covered.** V8's Solidity contract
   has 10/10 Halmos properties proven with zero counterexamples. The Soroban
-  equivalent is **Komet**: its *fuzzing* mode has now run and passed 3
-  properties at 100 examples each (§5b), but that is property-based testing,
-  not proof. `komet prove` — the symbolic mode that establishes a property for
-  all inputs — is not claimed here. Note also that Komet consumed an
-  unoptimized build; see the disclosure in §5b. Certora Sunbeam remains the
-  heavier answer, deliberately deferred to Tranche 3's SCF-funded audit.
+  equivalent is **Komet**: its *fuzzing* mode has run and passed 3 properties at
+  100 examples each (§5b), but that is property-based testing, not proof.
+  `komet prove` — the symbolic mode that establishes a property for all inputs —
+  **timed out at a 60-minute cap and is not claimed here.** Komet also consumed an
+  unoptimized build; see the disclosure in §5b. **Certora Sunbeam, the heavier
+  answer, cannot run against this contract at all (§5c)**, so no second
+  independent formal-verification result exists.
 - **No external human audit yet.** Everything above is internal
   (self-run tooling + manual review), which is why Tranche 3 budgets a
   real external audit through the SCF Audit Bank.
-- **Not deployed anywhere.** No live-network behavior (real Stellar RPC
-  timing, real trustline edge cases, real congestion) has been observed
-  yet — see README's "Known open items."
+- **The merged Tranche 3 tree is not deployed anywhere.** The Tranche 2 code is
+  live on testnet and has real activity behind it, but no live-network behaviour
+  of the Tranche 3 code (real Stellar RPC timing, real trustline edge cases, real
+  congestion) has been observed — see README's "Known open items."
+- **Dependency risk is reviewed, not verified.** SAFU's yield layer deposits into
+  a DeFindex vault which routes into Blend. The published audits of both
+  (OtterSec, Certora, Code4rena) were reviewed and their findings traced to this
+  contract's integration points (§7), but that is a documentation review — SAFU
+  does not itself verify third-party contract behaviour on-chain beyond the
+  deploy-time checks in `scripts/atomic_pool_vault_deploy.sh`.
 
 ## Reproducing this report
 

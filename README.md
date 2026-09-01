@@ -25,13 +25,15 @@ reproduced anywhere in this repository.
 **Status:** Tranche 3 code merged 2026-09-01; Tranche 2 is the code currently
 live on Stellar testnet. **278 unit tests pass on the merged tree.**
 
-Mutation and coverage figures below were measured on the **Tranche 2** tree and
-have not yet been re-run against the merged Tranche 3 code — that regression run
-is a stated prerequisite of the mainnet deploy, not an omission. Tranche 2 diff:
-400 mutants, 389 caught, 10 unviable, 1 documented survivor; the separate
-Tranche 3 diff campaign was 141 mutants with 140 of 140 viable killed and zero
-contract defects. Coverage 98.40% line / 98.11% region / 97.28% function, both
-measured 2026-08-25. See `TESTING.md` for the methodology and for the survivor.
+**The full-workspace mutation regression against the merged Tranche 3 tree has
+run (2026-09-01): 805 mutants — 782 caught, 22 unviable, 1 survivor, zero
+timeouts, and zero new contract defects.** The single survivor is the
+already-documented `vault.rs:418` `authorize_withdraw` mutant, unobservable
+because the test environment auto-approves authorization; it is the same mutant
+recorded at the pre-merge line 375. Earlier scoped campaigns are kept as history:
+Tranche 2 diff 400 mutants / 389 caught / 1 survivor, and a Tranche 3 diff
+campaign of 141 mutants with 140 of 140 viable killed. See `TESTING.md` §3 for
+the methodology and the survivor's full triage.
 
 Compiles to WASM via
 `stellar contract build --optimize`, `/audit-chain` +
@@ -246,7 +248,7 @@ deploy value: **600,000 XLM** = `6_000_000_000_000` stroops
 ## Error handling
 
 Every fallible public entrypoint returns `Result<T, PoolError>`, a typed
-`#[contracterror]` enum (`src/error.rs`, 73 variants), instead of
+`#[contracterror]` enum (`src/error.rs`, 77 variants), instead of
 `panic!`, the standard modern Soroban convention. Callers get a typed
 error code, not just an opaque host trap. Converted 2026-07-31 from an
 earlier all-`panic!` version: same validation conditions, same order,
@@ -265,9 +267,11 @@ auto-unwrap/panic on `Err`, so no caller ergonomics changed either.
 | `src/storage.rs` | Storage key layout + TTL-bump helpers (see below) |
 | `src/admin.rs` | Init, oracle/coSigner/admin rotation, pause, suspend |
 | `src/stake.rs` | Stake, withdraw, `setBeneficiary`, `emergencyExit`, points computation |
-| `src/claim.rs` | Full claim lifecycle (submit → activate → stream → complete/cancel) + the 2-of-2 admin+coSigner override escape hatch |
-| `src/test/` | Unit tests, split by mechanic (`admin_tests`, `stake_tests`, `claim_tests`, `override_tests`, `solvency_tests`), plus `profiling_tests` (resource-cost budgets) and `blend_scenario_tests` (the SCF reviewer-response scenario) |
-| `fuzz/` | `cargo-fuzz` targets for the solvency invariant and claim state machine (Soroban has no Halmos-equivalent symbolic verifier; this is the compensating control) |
+| `src/claim.rs` | Full claim lifecycle (submit → activate → stream → complete/cancel) + the 2-of-2 admin+coSigner override escape hatch + D1 on-chain Ed25519 oracle-approval verification |
+| `src/vault.rs` | D2 yield layer (Tranche 2): DeFindex vault deployment, redemption, bidirectional rebalancing, yield extraction |
+| `src/error.rs` | Typed `#[contracterror] PoolError` enum — 77 variants, codes are public ABI and never renumbered |
+| `src/test/` | 278 unit tests across 13 modules plus `common.rs`: by mechanic (`admin_tests`, `stake_tests`, `claim_tests`, `override_tests`, `solvency_tests`), by tranche feature (`d1_signature_tests`, `d2_vault_tests`, `t3_flags_tests`), mutation-gap regressions (`mutation_gap_tests`, `t2_mutation_gap_tests`), plus `profiling_tests` (resource-cost budgets), `pool_demo_tests`, and `blend_scenario_tests` (the SCF reviewer-response scenario) |
+| `fuzz/` | `cargo-fuzz` targets for the solvency invariant and claim state machine — the depth-based compensating control alongside Komet property verification (`TESTING.md` §5b) |
 
 ## Storage model
 
@@ -278,7 +282,7 @@ contract's placement, and why:
 |---|---|---|
 | `instance()` | Pool-wide globals: `admin`, `oracle`, `co_signer`, `xlm_token`, `pool_cap`, `total_staked`, `total_allocated`, `total_stakers`, `paused`, the daily outflow-cap counters (`daily_outflow`/`last_outflow_day`), the daily admission-cap counters (`daily_entitlement_total`/`last_entitlement_day`/`daily_claim_count`) | Every call already loads all of `instance()`. Never put per-user or unbounded data here. All of these are fixed-size scalars. |
 | `persistent()` | Per-staker (`Stake(Address)`), per-claim (`ClaimRec(BytesN<32>)`), per-override-request (`Override(BytesN<32>)`), banked points (`PointsBalance(Address)`) | Distributed across separate keys, not grown as one struct. Bounded per-entity storage, archived and restorable via TTL bumps. |
-| `temporary()` | Not currently used | Reserved for anything that's naturally allowed to expire and isn't load-bearing for solvency (e.g. a future price cache). |
+| `temporary()` | `RevokedApproval(BytesN<32>)` — D1 oracle-approval revocations, keyed by the sha256 of the approval payload | A revocation is only meaningful until the approval's own `deadline` passes; after that `SignatureExpired` rejects the approval regardless, so expiry here is safe. TTL is sized by `types::REVOCATION_TTL_LEDGERS` and guarded by a compile-time `const _: () = assert!` that the TTL outlives every legal deadline. |
 
 **On struct field sizing:** reviewed 2026-07-14. Sub-word bit-packing has no
 real equivalent here. Soroban's storage cost is driven by read/write *count*,
@@ -307,13 +311,18 @@ Full `DataKey` enum (`src/storage.rs`):
 ```rust
 pub enum DataKey {
     // instance(): pool-wide globals
-    Admin, Oracle, CoSigner, XlmToken, PoolCap,
+    Admin, Oracle, OraclePubKey, CoSigner, XlmToken, PoolCap,
     TotalStaked, TotalAllocated, TotalStakers, Paused,
     DailyOutflow, LastOutflowDay,
     DailyEntitlementTotal, LastEntitlementDay, DailyClaimCount,
+    // instance(): D2 yield layer (Tranche 2)
+    Vault, Treasury, DeployBps,
+    TotalDeployedShares, TotalDeployedXlm, TotalExtractedYield,
     // persistent(): per-entity
     Stake(Address), ClaimRec(BytesN<32>), Override(BytesN<32>),
     PointsBalance(Address),
+    // temporary(): self-expiring
+    RevokedApproval(BytesN<32>),
 }
 ```
 
@@ -322,7 +331,11 @@ pub enum DataKey {
 - **Tier assessed off-chain by the oracle at claim time** (not stake-amount
   banded), coverage cap = `stake × tier_ratio × TIER_COVERAGE_BPS / 10_000`,
   ratio and coverage-percentage kept as two independently-adjustable knobs.
-- **90-day time gate**, points banked in full and never burned once earned.
+- **90-day time gate** on claim eligibility. Points accrue while staked and
+  bank on exit, but they are **not** permanent: `approve_claim` burns the
+  wallet's entire lifetime points balance as the staker-gated cost of
+  activating a claim (added 2026-07-22; `claim.rs`, `points_burned` on the
+  `ClaimApproved` event).
 - **Dynamic outflow cap** on payout streaming (5%/3%/1% by pool
   utilization), first-come-first-served per calendar day with automatic
   carry-forward, not a queue.
@@ -368,8 +381,14 @@ pub enum DataKey {
   Neither is a contract defect, and both are worth stating plainly rather
   than leaving implied. Fuzzing is deliberately **not** in this list: it
   covers the current Tranche 2 code, see the assurance paragraph below.
-  - **No Halmos-equivalent exists for Soroban.** Certora Sunbeam (the real
-    Soroban tool) is deliberately deferred to Tranche 3's SCF-funded audit.
+  - **Certora Sunbeam cannot run against this contract.** Evaluated
+    2026-09-01: `cvlr-soroban`, Certora's own Soroban spec library, pins
+    `soroban-sdk = "22"` at its current default-branch HEAD, and this contract
+    is on `soroban-sdk` 27.0.6 — the two cannot coexist in one dependency
+    graph. Established by building Certora's own tutorial first. Full account
+    in `TESTING.md` §5c. **Komet is the symbolic-verification tool that does
+    work here and it has run and passed** — 3 properties, 100 examples each,
+    `TESTING.md` §5b.
   - **`cargo-scout-audit` cannot analyse the crate at all.** Scout 0.3.16
     builds against `wasm32-unknown-unknown`; `soroban-sdk` 27 refuses that
     target on Rust 1.82+ and requires `wasm32v1-none`, which this contract
@@ -380,11 +399,13 @@ pub enum DataKey {
   What assurance does rest on: **278 unit tests** (all passing as of
   2026-09-01), **151,398 fuzzed action-sequences against this exact
   Tranche 2 code** (2026-08-17, both targets, zero crashes and zero
-  solvency-invariant violations, see "Fuzzing" above), the coverage and
-  mutation results recorded in `TESTING.md` (98.40% line coverage;
-  mutation run against the Tranche 2 diff 2026-08-25 — 400 mutants, 389
-  caught, 10 unviable, 1 documented survivor), and a manual adversarial
-  review checklist. See `TESTING.md` for methodology.
+  solvency-invariant violations, see "Fuzzing" above), **the full-workspace
+  mutation regression on the merged Tranche 3 tree** (2026-09-01 — 805
+  mutants, 782 caught, 1 documented survivor, zero new defects), **Komet
+  symbolic property verification** (3 properties, 100 examples each, all
+  passed — `TESTING.md` §5b), the coverage figures recorded in `TESTING.md`
+  §2, and a manual adversarial review checklist. See `TESTING.md` for
+  methodology.
 - **The contract is not upgradeable.** There is no upgrade authority
   anywhere in it. This is deliberate and is a real positive against
   OWASP SC10, but the tradeoff is explicit: there is no post-deployment
