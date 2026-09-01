@@ -18,6 +18,7 @@ use soroban_sdk::Address;
 
 use super::common::*;
 use crate::error::PoolError;
+use crate::types::ClaimStatus;
 
 const ENTITLEMENT: i128 = 1_000_000;
 const TIER_B: u32 = 2;
@@ -144,9 +145,16 @@ fn stress_cap_tightens_at_exactly_20_percent_utilization() {
     // utilization now exactly 2000 bps → rate drops to 1000 → cap 50M.
     // Same real day (500s later), different ledger.
     advance_ledgers(&env, 100);
-    // 100M (today's total) + 1M > 50M → must error.
-    let result = try_submit_claim_signed(&env, &s, &s.admin, &w2, &tx_hash(&env, 2), &1_000_000, &TIER_C, &now_ts(&env));
-    assert_eq!(result, Err(Ok(PoolError::DailyStressCapExceeded)));
+    // 100M (today's total) + 1M > 50M → must be blocked. T3 (2026-08-24):
+    // this now queues (ClaimStatus::Reserved) instead of hard-erroring —
+    // the boundary logic being tested (the exact 20%-utilization rate
+    // drop) is unchanged, only the observable outcome is.
+    let entitlement = 1_000_000;
+    let result = try_submit_claim_signed(&env, &s, &s.admin, &w2, &tx_hash(&env, 2), &entitlement, &TIER_C, &now_ts(&env));
+    let claim_id = result.unwrap().unwrap();
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Reserved);
+    assert_eq!(claim.entitlement, entitlement);
 }
 
 /// Days 1–4: fill the daily stress cap EXACTLY each day, walking
@@ -196,10 +204,16 @@ fn stress_cap_rate_drops_at_exactly_50_percent_utilization() {
     submit_claim_signed(&env, &s, &s.admin, &w3, &tx_hash(&env, 3), &50_000_000, &TIER_C, &now_ts(&env));
     advance_days(&env, 1);
     submit_claim_signed(&env, &s, &s.admin, &w4, &tx_hash(&env, 4), &50_000_000, &TIER_C, &now_ts(&env));
-    // Utilization exactly 5000 bps → rate 300 → cap 15M. 16M must error.
+    // Utilization exactly 5000 bps → rate 300 → cap 15M. 16M must be
+    // blocked. T3 (2026-08-24): queues instead of hard-erroring — same
+    // boundary logic, different observable outcome (see comment above).
     advance_days(&env, 1);
-    let result = try_submit_claim_signed(&env, &s, &s.admin, &w5, &tx_hash(&env, 5), &16_000_000, &TIER_C, &now_ts(&env));
-    assert_eq!(result, Err(Ok(PoolError::DailyStressCapExceeded)));
+    let entitlement = 16_000_000;
+    let result = try_submit_claim_signed(&env, &s, &s.admin, &w5, &tx_hash(&env, 5), &entitlement, &TIER_C, &now_ts(&env));
+    let claim_id = result.unwrap().unwrap();
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Reserved);
+    assert_eq!(claim.entitlement, entitlement);
 }
 
 /// Entitlement that EXACTLY fills both the solvency gap and the daily

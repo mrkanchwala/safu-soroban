@@ -10,7 +10,7 @@ with the commands in each section.
 Tranche 1 only. T2 added D1 (on-chain Ed25519 oracle approval verification),
 D2 (DeFindex vault yield deployment, `src/vault.rs`), atomic oracle rotation,
 and the 7a audit fixes. Concretely, since the numbers below were last measured:
-- **Unit tests: 238 passing** (was 184) — §1's count is updated below
+- **Unit tests: 250 passing** (was 184 at T1, 238 after the T2 merge) — §1's count is updated below
 - **Error variants: 73** (was 72) — D1 appended 73-76, D2 appended 80-92, and
   the 7a audit appended `Paused = 93` when `require_not_paused` was converted
   from the last surviving bare `panic!`. Codes are public ABI and are never
@@ -18,10 +18,17 @@ and the 7a audit fixes. Concretely, since the numbers below were last measured:
 - **`initialize` no longer exists** — configuration moved to `__constructor`
   (7a audit) to close the deploy→init front-running window. See README's
   "Deploy-time arguments"
-- **Fuzzing (§3) has NOT been re-run against T2 code.** The last verified run
-  (2026-07-14: 4,270 runs, 0 crashes) predates D1/D2/7c and the constructor
-  migration. Native runs abort in libFuzzer's startup print on macOS arm64
-  (see `Dockerfile.fuzz`); re-run in that container before D4
+- **Fuzzing (§4) HAS been re-run against T2 code — 2026-08-17.** Both targets,
+  in Docker on the team's Linux host, against the exact commit deployed to
+  testnet: `fuzz_solvency` 71,034 runs / `fuzz_override` 80,364 runs =
+  **151,398 runs, zero crashes, zero artifacts.** Re-verified 2026-08-20
+  against the then-current `main`: identical commit, and no changes to
+  `contracts/protection-pool/src/` or `fuzz/` since, so the result still holds
+  for the deployed code.
+  *(This bullet previously asserted the opposite and cited "2026-07-14: 4,270
+  runs". That figure is the container smoke test in `Dockerfile.fuzz`'s own
+  header, not a campaign, and the section reference was wrong too — fuzzing is
+  §4, not §3. Corrected 2026-08-21.)*
 
 **Updated 2026-07-31** — converted the contract from `panic!("SAFU: ...")`
 string-based error handling to a typed `#[contracterror] PoolError` enum
@@ -41,7 +48,7 @@ a full-contract review, independent of the new mechanism (see §7 for
 what they were). This update re-measured every section below against the
 new code rather than leaving the 2026-07-15 numbers in place unverified.
 
-## 1. Unit tests — 238 passing (up from 184)
+## 1. Unit tests — 250 passing (up from 238; 184 at Tranche 1)
 
 ```bash
 cargo test --package protection-pool
@@ -61,7 +68,7 @@ Split by mechanic in `src/test/`:
 
 16 pre-existing tests were updated for the new approval-gated flow (the gate no longer auto-activates a claim); none were weakened — 2 of the 16 had been silently pinning bugs as "expected" values, corrected with the bug fix rather than left inconsistent.
 
-## 2. Coverage — 97.47% line / 98.46% region / 95.69% function (re-measured 2026-07-22, after the mutation-testing gap-closure tests)
+## 2. Coverage — 98.40% line / 98.11% region / 97.28% function (re-measured 2026-08-25, after the Tranche 2 mutation-gap tests)
 
 ```bash
 cargo llvm-cov --package protection-pool --summary-only
@@ -69,15 +76,16 @@ cargo llvm-cov --package protection-pool --summary-only
 
 | File | Line % | Notes |
 |---|---|---|
-| `admin.rs` | 96.09% | recovered from an interim 85.94% dip — the 2 new `unsuspend_stake` tests added while closing mutation-testing gaps (Rule A/Rule B clock-reset paths) closed almost all of it |
-| `claim.rs` | 98.28% | largest file — claim lifecycle + override flow + the new approval/expiry functions |
-| `lib.rs` | 98.45% | thin entrypoint wrappers |
-| `stake.rs` | 94.55% | |
-| `storage.rs` | 99.44% | |
+| `admin.rs` | 96.95% | |
+| `claim.rs` | 98.76% | largest file — claim lifecycle + override flow + approval/expiry + D1 oracle verification |
+| `lib.rs` | 99.21% | thin entrypoint wrappers |
+| `stake.rs` | 95.00% | |
+| `storage.rs` | 99.60% | |
 | `test/common.rs` | 100% | shared test setup |
 | `types.rs` | 0% | pure data/const declarations, no branches to cover |
+| `vault.rs` | 98.93% | D2 yield module, added in Tranche 2 |
 
-Overall coverage improved on the prior 96.38%/93.64%(function) figures — the 5 tests added to close mutation-testing gaps landed real assertions on previously-thin branches, not just incidental coverage.
+Overall line coverage improved on the prior 97.47% figure and function coverage on the prior 95.69% — the 12 tests added to close the Tranche 2 mutation gaps (§3) landed real assertions on previously-thin branches, not just incidental coverage. `vault.rs`, where 19 of the 22 surviving mutants sat, is the second-best-covered non-trivial file in the crate.
 
 Industry guidance (checked 2026-07-15 against current smart-contract QA
 practice) targets ≥90% line coverage with ≥95% on fund-handling code
@@ -87,7 +95,7 @@ on every fund-handling file.
 **Coverage measures whether a line ran during tests — not whether a bug
 there would be caught. That distinction is exactly what §3 addresses.**
 
-## 3. Mutation testing — 100% of catchable mutants killed
+## 3. Mutation testing — five campaigns; 100% of catchable mutants killed on Tranche 1, 389/390 on the Tranche 2 diff
 
 ```bash
 cargo mutants --workspace
@@ -172,7 +180,61 @@ re-verification. **Result: every one of the 485 mutants that could
 possibly be caught, was — no regression from the error-handling
 refactor.**
 
-## 4. Fuzzing — 2 targets, 2 independent environments, 53,588+37,943 runs
+**2026-08-25, fifth campaign — the Tranche 2 diff, and the first mutation
+run scoped to it.** The four campaigns above were all measured against
+Tranche 1 code. This one runs `cargo mutants --in-diff` over the contract
+diff between `pre-typed-errors-2026-07-31` and the Tranche 2 submission
+tag, so it tests exactly what Tranche 2 added or changed: **400 mutants —
+389 caught, 10 unviable, 1 survivor.**
+
+The initial pass returned 22 survivors, **19 of them in `src/vault.rs`**,
+the DeFindex yield module Tranche 2 introduced, concentrated on the
+capital-movement path (`redeem`, `withdraw_yield`, `extract_yield`,
+`deploy_to_vault`, `set_deploy_bps`, `yield_balance`) plus both approval-
+window boundaries in `revoke_approval`. Triaged individually, same method
+as the 2026-07-15 baseline:
+
+- **17 were real test gaps** — the line executed under test but no
+  assertion pinned the exact value or boundary. Closed with **12 targeted
+  tests** in `src/test/t2_mutation_gap_tests.rs`; each names the mutant(s)
+  it kills by `file:line:col`, and each was verified by hand-injecting the
+  mutation into the real source and confirming the test fails, then
+  restoring and checksumming. Suite 238 -> 250.
+- **3 were provably equivalent** — `yield_balance`'s and `extract_yield`'s
+  zero-width `>`/`>=` boundaries, where both arms compute 0, and
+  `extract_yield`'s `current + 0` write, unobservable because
+  `get_total_extracted_yield` ends in `.unwrap_or(0)`. Documented with
+  per-entry justification in `.cargo/mutants.toml`, not silently excluded.
+  Two are line-anchored deliberately: `extract_yield` has three `>`/`>=`
+  sites producing identical mutant descriptions and the third is a REAL
+  gap, so a function-scoped pattern would have swallowed it.
+- **1 was a pre-existing documented equivalent** (`stake.rs:137`), already
+  excluded and surfaced only because this pass ran with exclusions off.
+
+**The scope is 400 rather than 404** because the shipped
+`.cargo/mutants.toml` excludes those four; 400 is what `cargo mutants`
+reports from this repository as-is.
+
+**The one survivor: `vault.rs:375`, replacing the body of
+`authorize_withdraw` with `()`.** That function's job is to request
+authorization from the vault before withdrawing. The test environment
+approves all authorization automatically, so it cannot observe whether the
+request was made — deleting the function leaves all 250 tests passing. It
+is **not** an equivalent mutant. Four approaches were tried to close it,
+including scoped `mock_auths`, asserting on `env.auths()`, and hand-built
+`SorobanAuthorizationEntry` values under both credential types; all fail
+for the same structural reason, since disabling the mocking also disables
+the admin's own authorization and the test then never reaches the vault
+call. The function's behaviour is verified against the deployed DeFindex
+vault directly — its authorization shape was captured from a live testnet
+`withdraw` on 2026-08-14 (see §6).
+
+**No contract source file was modified by any of this.** The Tranche 2
+WASM rebuilt from this tree hashes to
+`62ca8a24acf4fdb262ae479587924fb36bf5604421b895a0b8b7accfb5eaed3a` —
+byte-identical to the deployed contract.
+
+## 4. Fuzzing — 2 targets, 4 campaigns, 285,070 runs, zero crashes ever
 
 ```bash
 cd contracts/protection-pool
@@ -196,8 +258,9 @@ SubmitClaim/ClaimStream/CancelClaim/AdvanceDays-style action sequences:
   — the macOS incompatibility doesn't exist on Linux): `fuzz_solvency`
   21,692 runs / `fuzz_override` 31,896 runs.
 
-**Combined: 114,344 fuzzed action-sequences across both targets and both
-environments. Zero crashes, zero solvency-invariant violations, ever.**
+**Subtotal for the two July campaigns: 114,344 fuzzed action-sequences
+across both targets and both environments. Zero crashes, zero
+solvency-invariant violations.**
 
 **2026-07-22, third data point — same macOS ASan/libFuzzer host
 incompatibility recurred** (confirmed independently again: both targets
@@ -208,6 +271,22 @@ re-running natively on the Linux VPS test rig against the updated
 11,091 runs, 90s each. **19,328 additional runs, zero crashes,
 zero solvency-invariant violations** — the new approval/expiry logic and
 all 5 bug fixes held up clean under fuzzing, not just the unit-test suite.
+
+**2026-08-17, fourth campaign — the current Tranche 2 result, and the one
+the Tranche 2 submission quotes.** Run in Docker on the team's Linux host
+against the exact commit deployed to testnet (`16b4d118`), both targets at
+601s each: `fuzz_solvency` **71,034 runs** / `fuzz_override` **80,364
+runs** = **151,398 fuzzed action-sequences, zero crashes, zero artifacts,
+zero solvency-invariant violations.** Re-verified 2026-08-20 against the
+then-current `main`: identical commit, with no changes to
+`contracts/protection-pool/src/` or `fuzz/` since, so this result stands
+for the deployed contract rather than for a superseded build.
+
+**All four campaigns combined: 285,070 fuzzed action-sequences. Zero
+crashes, zero solvency-invariant violations, ever.** When a single figure
+is quoted for the current code, it is the 151,398 above, because the three
+July campaigns predate the D1/D2/7a changes and the `__constructor`
+migration.
 
 Soroban has no Halmos-equivalent symbolic verifier (Kani was researched
 and ruled infeasible for `no_std`/FFI-heavy `soroban-sdk` code; Certora
@@ -275,8 +354,7 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
   full attacker-mindset pass — 14/14 Soroban vulnerability checklist,
   8/8 ProtectionPool-specific checks, 4/4 economic-attack probes (cap-
   manipulation, oracle rate-limit gaming, dust/rounding extraction,
-  storage-TTL griefing) — all clean. **0 CRITICAL/HIGH/MEDIUM.** Full
-  report: `audits/2026-07-15_internal-audit-chain.md`.
+  storage-TTL griefing) — all clean. **0 CRITICAL/HIGH/MEDIUM.**
 - **`/audit-chain --target soroban`, comprehensive mode, re-run 2026-07-22
   on the burn-mechanism + bug-fix changes** — explicitly run in
   bug-bounty style (actively trying to break the new logic, not just
@@ -305,9 +383,8 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
 - **`/cso`, oracle/infra scope (2026-07-15):** secrets archaeology on
   this repo (working tree + full git history) — clean. The Stellar
   oracle signer itself is Tranche 2 scope and doesn't exist yet; a
-  design checklist for that future build is filed in the report rather
-  than treated as a T1 gap. Full report:
-  `audits/2026-07-15_internal-cso-oracle-scope.md`.
+  design checklist for that future build was produced rather than
+  treated as a T1 gap.
 - **Solodit cross-reference** (Cyfrin's real-world finding database,
   50,000+ findings across 30+ audit firms): searched Access Control,
   Oracle, Reentrancy, Rounding, and Replay-Attack finding classes for

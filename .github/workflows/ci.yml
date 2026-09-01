@@ -1,8 +1,9 @@
 # CI — added 2026-08-21.
 #
 # Purpose is evidential, not just hygienic. The README tells SCF reviewers that
-# 238 tests pass and that `cargo deny` is clean; before this workflow existed a
-# reviewer had to take both on trust, or clone and build the repo themselves.
+# the test suite passes and that `cargo deny` is clean; before this workflow
+# existed a reviewer had to take both on trust, or clone and build the repo
+# themselves.
 # This makes each claim a link they can click.
 #
 # Runs on every branch deliberately, not just `main`, so a change can be proven
@@ -23,7 +24,7 @@ jobs:
     name: cargo test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: Swatinem/rust-cache@v2
 
@@ -43,7 +44,7 @@ jobs:
     name: cargo deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Uses the committed deny.toml, whose allowlists were derived from the
       # real dependency tree rather than a template. Do not widen them here to

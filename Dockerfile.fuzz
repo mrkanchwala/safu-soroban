@@ -20,4 +20,20 @@ WORKDIR /work
 COPY . /work
 WORKDIR /work/contracts/protection-pool
 
+# REQUIRED since 2026-08-21, when `rust-toolchain.toml` pinned this repo to
+# stable 1.96.0 so an upstream toolchain release could not redden the CI badge
+# mid-review. rustup reads that file from the working tree and it OVERRIDES
+# this image's nightly default, so without this line `cargo fuzz` fails
+# immediately with "the option `Z` is only accepted on the nightly compiler" —
+# `-Zsanitizer=address` is nightly-only. RUSTUP_TOOLCHAIN takes precedence over
+# rust-toolchain.toml, so the pin still governs CI and `cargo test`, where it is
+# the whole point, while fuzzing gets the nightly it structurally requires.
+#
+# Found 2026-08-24. The pin silently broke this path four days after it landed
+# and nothing caught it: CI runs `cargo test` + `cargo deny` only, so fuzzing is
+# a manual gate. The campaign figures quoted in README/TESTING.md (151,398 runs,
+# 2026-08-17, commit 16b4d118) predate the pin and remain accurate for that
+# commit — this restores the ability to reproduce them.
+ENV RUSTUP_TOOLCHAIN=nightly
+
 CMD ["cargo", "fuzz", "run", "fuzz_solvency", "--", "-max_total_time=60"]
