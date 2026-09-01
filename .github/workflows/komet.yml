@@ -94,10 +94,16 @@ jobs:
         run: |
           set -o pipefail
           command -v komet | tee cli.log
-          echo "== --version ==" | tee -a cli.log
-          komet --version 2>&1 | tee -a cli.log
+          # NOTE: komet has no --version. It requires a subcommand and exits 2
+          # without one:  usage: komet [-h] {run,kast,test,prove,prove-raw}
+          # Probe run 33476201526 failed here on that flag alone, with the tool
+          # installed and working. Use --help, which is the real surface.
           echo "== --help ==" | tee -a cli.log
           komet --help 2>&1 | tee -a cli.log
+          echo "== test --help ==" | tee -a cli.log
+          komet test --help 2>&1 | tee -a cli.log
+          echo "== prove --help ==" | tee -a cli.log
+          komet prove --help 2>&1 | tee -a cli.log
 
       - name: Run Komet property tests (fuzzing)
         id: test
