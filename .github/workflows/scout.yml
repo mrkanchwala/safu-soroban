@@ -2,37 +2,66 @@
 #
 # Deliberately NOT part of the CI gate. `rust-toolchain.toml` pins this repo to
 # stable 1.96.0 specifically so an upstream toolchain release cannot redden the
-# CI badge mid-review, and one of the two packages below is expected to fail.
+# CI badge mid-review, and this job is currently expected to fail.
 #
 # Purpose is evidential. The SCF Audit Bank intake form asks whether security
-# tooling was run *prior to* requesting the audit. A linkable run of this
-# workflow answers that better than a local run, because a reviewer can re-read
-# the raw log themselves.
-#
-# Two packages are tested because they are genuinely different crates:
-#   cargo-scout-audit         0.3.16 — the general CoinFabrik tool (Ink! + Soroban)
-#   cargo-scout-audit-soroban 0.2.2  — a separate, Soroban-specific package
-#
-# Versions are pinned explicitly; `cargo install` without --version resolves to
-# latest, which would make a recorded result unreproducible.
+# tooling was run *prior to* requesting the audit. A linkable run answers that
+# better than a local run, because a reviewer can re-read the raw log and the
+# generated report themselves.
 #
 # ---------------------------------------------------------------------------
-# WHY A JOB HERE CAN END RED, AND WHY THAT IS CORRECT
+# WHY THIS JOB CAN END RED, AND WHY THAT IS CORRECT
 #
 # Scout analyses by compiling the crate with custom lints attached — the
-# compile IS the analysis. When the build fails, no detector ever runs, but
-# Scout still prints a summary table reading:
+# compile IS the analysis. CoinFabrik's own README states it plainly:
+#
+#     "Make sure that your smart contracts compile properly.
+#      Scout won't run if any compilation errors exist."
+#
+# When the build fails no detector runs, but Scout still prints:
 #
 #     | protection_pool | Analyzed | 0 | 0 | 0 | 0 |
 #
 # That row is an empty table, not a clean bill of health: zero findings because
 # nothing was examined. Pasted into a grant form it would read as a pass from a
-# tool SCF itself recommends, which is the opposite of the truth.
+# tool the SCF itself funded, which is the opposite of the truth. (The vacuous
+# row is NOT documented upstream — worth citing as a reporting flaw.)
 #
-# So each job ends with a Verdict step that inspects the log and FAILS the job
-# when no analysis actually happened. A red job whose summary explains why is
-# honest; a green tick beside a vacuous zero row is not. Logs and summaries are
-# always published first, so a failed job still produces the full evidence.
+# So the job ends with a Verdict step that inspects the log and FAILS when no
+# analysis actually happened, after the summary, report and artifacts have
+# already been published. A red job whose summary explains why is honest; a
+# green tick beside a vacuous zero row is not.
+#
+# ---------------------------------------------------------------------------
+# KNOWN BLOCKER (as of 2026-09-01)
+#
+# Scout builds against `wasm32-unknown-unknown`. `soroban-sdk` 27 refuses that
+# target on Rust 1.82+ and requires `wasm32v1-none` (Rust 1.84+), so the build
+# script panics before any contract source is reached. Scout's Soroban support
+# was SCF-funded and predates that target change.
+#
+# ---------------------------------------------------------------------------
+# TODO — switch to the official Scout GitHub Action
+#
+# CoinFabrik publishes a Scout Action on the GitHub Marketplace, funded by the
+# same SCF grant that added Soroban support. Using it would be both more
+# standard and better evidence than a hand-rolled `cargo install`, since a
+# reviewer would see the vendor's own integration rather than our wrapper.
+# NOT wired up yet because the exact `owner/repo@version` reference must be
+# read from the Marketplace, and a third-party Action reference must never be
+# guessed — a wrong or typosquatted ref is a supply-chain risk. Replace the
+# install+run steps below once that reference is confirmed.
+#
+# ---------------------------------------------------------------------------
+# REMOVED 2026-09-01 — the `cargo-scout-audit-soroban` 0.2.2 job.
+#
+# It is superseded and uninstallable, both established by evidence rather than
+# assumption. The README says the core `cargo-scout-audit` IS the Soroban tool
+# ("Scout audit is the core development on which we extend scout for specific
+# blockchains"), and run 33474004425 showed 0.2.2 failing to install BOTH ways:
+# with `--locked` on `time v0.3.28` (E0282) and, on a fresh dependency resolve,
+# on `gix-url` (E0283). The lockfile was not the cause; the crate simply does
+# not build on a current toolchain.
 # ---------------------------------------------------------------------------
 
 name: Scout (manual)
@@ -44,7 +73,7 @@ permissions:
   contents: read
 
 jobs:
-  scout-general:
+  scout:
     name: cargo-scout-audit 0.3.16
     runs-on: ubuntu-latest
     steps:
@@ -61,22 +90,43 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          cargo install cargo-scout-audit --version 0.3.16 --locked 2>&1 | tee install-general.log
+          cargo install cargo-scout-audit --version 0.3.16 --locked 2>&1 | tee install.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Run Scout
+      - name: Run Scout (console)
         id: run
         if: always()
         continue-on-error: true
         run: |
           set +e
           if [ ! -x "$HOME/.cargo/bin/cargo-scout-audit" ]; then
-            echo "install failed — no binary to run" | tee scout-general.log
+            echo "install failed — no binary to run" | tee scout.log
             echo "exit_code=127" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          cargo scout-audit 2>&1 | tee scout-general.log
+          cargo scout-audit 2>&1 | tee scout.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      # Report formats, per the upstream README:
+      #   --output-format [html|md|pdf|json|sarif]
+      # A generated report is a far better artifact for the Audit Bank form
+      # than a console tail. Best-effort: if the build fails there will be
+      # nothing to generate, which the Verdict step below already covers.
+      - name: Generate reports (html + sarif)
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          if [ ! -x "$HOME/.cargo/bin/cargo-scout-audit" ]; then
+            echo "no binary — skipping report generation"; exit 0
+          fi
+          for fmt in html sarif; do
+            echo "== --output-format $fmt ==" | tee -a reports.log
+            cargo scout-audit --output-format "$fmt" 2>&1 | tee -a reports.log
+          done
+          echo "== files produced =="  | tee -a reports.log
+          ls -la *.html *.sarif *.json *.md 2>/dev/null | tee -a reports.log || \
+            echo "(no report files produced)" | tee -a reports.log
 
       - name: Summarise
         if: always()
@@ -90,23 +140,27 @@ jobs:
             echo "| scout run | \`${{ steps.run.outputs.exit_code }}\` |"
             echo ""
             echo '```'
-            tail -40 scout-general.log 2>/dev/null || echo "(no log produced)"
+            tail -40 scout.log 2>/dev/null || echo "(no log produced)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: scout-general-log
+          name: scout-evidence
           path: |
-            scout-general.log
-            install-general.log
+            scout.log
+            install.log
+            reports.log
+            *.html
+            *.sarif
+            *.json
           if-no-files-found: warn
 
       - name: Verdict — did Scout actually analyse anything?
         if: always()
         run: |
-          LOG=scout-general.log
+          LOG=scout.log
           if [ ! -s "$LOG" ]; then
             echo "### Verdict: NOT ANALYSED (no log produced)" >> "$GITHUB_STEP_SUMMARY"
             echo "::error::Scout produced no output."
@@ -121,113 +175,16 @@ jobs:
               echo "\`Analyzed | 0 | 0 | 0 | 0\` row above is an **empty table, not a"
               echo "clean result** — zero findings because nothing was examined."
               echo ""
+              echo "This matches CoinFabrik's own documented behaviour: *\"Scout won't"
+              echo "run if any compilation errors exist.\"* The blocker is a target"
+              echo "mismatch — Scout builds for \`wasm32-unknown-unknown\`, while"
+              echo "\`soroban-sdk\` 27 requires \`wasm32v1-none\`."
+              echo ""
               echo "This job is deliberately marked **failed** so its status matches"
               echo "reality. A green tick beside a vacuous zero row would misrepresent"
               echo "a tool failure as a pass."
             } >> "$GITHUB_STEP_SUMMARY"
             echo "::error::Scout did not analyse the contract — the build failed before any detector ran."
-            exit 1
-          fi
-          echo "### Verdict: analysis completed — findings above are real" >> "$GITHUB_STEP_SUMMARY"
-
-  scout-soroban:
-    name: cargo-scout-audit-soroban 0.2.2
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install cargo-scout-audit-soroban 0.2.2 (pinned)
-        id: install
-        continue-on-error: true
-        run: |
-          set +e
-          echo "== attempt 1: --locked (the crate's own lockfile) ==" | tee install-soroban.log
-          cargo install cargo-scout-audit-soroban --version 0.2.2 --locked 2>&1 | tee -a install-soroban.log
-          LOCKED=${PIPESTATUS[0]}
-          echo "locked_exit=$LOCKED" >> "$GITHUB_OUTPUT"
-          if [ "$LOCKED" -ne 0 ]; then
-            {
-              echo ""
-              echo "== attempt 2: fresh dependency resolve (no --locked) =="
-              echo "Attempt 1 failed. 0.2.2's own lockfile pins time v0.3.28, which hits"
-              echo "rustc's E0282 inference breakage and cannot compile on a current"
-              echo "toolchain. Retrying with a fresh resolve to separate 'stale pin'"
-              echo "from 'unusable tool'."
-            } | tee -a install-soroban.log
-            cargo install cargo-scout-audit-soroban --version 0.2.2 2>&1 | tee -a install-soroban.log
-            echo "unlocked_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
-          else
-            echo "unlocked_exit=skipped" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Discover the installed binary
-        if: always()
-        run: ls -la "$HOME/.cargo/bin" | tee cargo-bin.txt
-
-      - name: Run Scout (Soroban build)
-        id: run
-        if: always()
-        continue-on-error: true
-        run: |
-          set +e
-          BIN=""
-          for c in cargo-scout-audit-soroban cargo-scout-audit; do
-            if [ -x "$HOME/.cargo/bin/$c" ]; then BIN="$c"; break; fi
-          done
-          if [ -z "$BIN" ]; then
-            echo "no scout binary present — both install attempts failed" | tee scout-soroban.log
-            echo "exit_code=127" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "using binary: $BIN" | tee scout-soroban.log
-          "$HOME/.cargo/bin/$BIN" scout-audit 2>&1 | tee -a scout-soroban.log
-          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
-
-      - name: Summarise
-        if: always()
-        run: |
-          {
-            echo "## cargo-scout-audit-soroban 0.2.2"
-            echo ""
-            echo "| Stage | Result |"
-            echo "|---|---|"
-            echo "| install \`--locked\` | \`${{ steps.install.outputs.locked_exit }}\` |"
-            echo "| install fresh resolve | \`${{ steps.install.outputs.unlocked_exit }}\` |"
-            echo "| scout run | \`${{ steps.run.outputs.exit_code }}\` |"
-            echo ""
-            echo "A \`--locked\` failure alone does not mean the tool is unusable — it"
-            echo "means the crate's own pinned dependency set no longer builds. The"
-            echo "fresh-resolve attempt is what distinguishes the two."
-            echo ""
-            echo '```'
-            tail -40 scout-soroban.log 2>/dev/null || echo "(no log produced)"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: scout-soroban-log
-          path: |
-            scout-soroban.log
-            install-soroban.log
-            cargo-bin.txt
-          if-no-files-found: warn
-
-      - name: Verdict — did Scout actually analyse anything?
-        if: always()
-        run: |
-          LOG=scout-soroban.log
-          if [ ! -s "$LOG" ] || grep -qE "no scout binary present|build failed|could not compile|unsupported by the Soroban Environment" "$LOG"; then
-            {
-              echo ""
-              echo "### Verdict: NOT ANALYSED"
-              echo ""
-              echo "No detector ran against the contract. Any zero-finding row is an"
-              echo "empty table, not a clean result. This job is deliberately marked"
-              echo "**failed** so its status matches reality."
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Scout (Soroban) did not analyse the contract."
             exit 1
           fi
           echo "### Verdict: analysis completed — findings above are real" >> "$GITHUB_STEP_SUMMARY"
