@@ -56,6 +56,8 @@ fixes from the combined `/audit-chain` + `/cso` pass.
 - **Deploy tx:** [`e146fed40e89...`](https://stellar.expert/explorer/testnet/tx/e146fed40e894d77ba89a9febc6cbb1e0fd6ce4092363c3df2055ea00b4b3d2a)
 - **Initialize tx:** [`a10ff8fffcdb...`](https://stellar.expert/explorer/testnet/tx/a10ff8fffcdb618398ea2e946891ed52bf8c0503a5632130d466c9973c2a36d3)
 - **WASM hash:** `62ca8a24acf4fdb262ae479587924fb36bf5604421b895a0b8b7accfb5eaed3a`
+  — the Tranche 2 build. The current tree hashes differently since the
+  Tranche 3 merge; see "Building" for both values and why.
 - **Yield vault (D2):** `CCSS44GDUI4TDTLX2XAGPWVVDOZPBTGSFLIBT6DXYLGU74ACF76EE5HZ`,
   SAFU's own DeFindex vault with `VaultFee = 0`, wired via `set_vault`
 - **Pool cap:** 600,000 XLM (`6_000_000_000_000` stroops), unchanged from
@@ -114,7 +116,7 @@ is where the integration with an existing Stellar DeFi protocol happens.
 
 ```bash
 cargo check --package protection-pool          # fast type/logic check
-cargo test --package protection-pool           # 250 unit tests
+cargo test --package protection-pool           # 278 unit tests
 cargo build --package protection-pool --release --target wasm32v1-none   # plain, unoptimized WASM
 stellar contract build --optimize              # optimized — this is what was deployed
 ```
@@ -122,9 +124,22 @@ stellar contract build --optimize              # optimized — this is what was 
 The **WASM hash published under "Testnet deployment" below is produced by
 `stellar contract build --optimize`**, not by the plain `cargo build` line
 above — the two emit different artifacts, and only the optimized one
-matches the deployed contract. Verified 2026-08-25 by rebuilding from the
-Tranche 2 submission tag and from the current tree; both hash to
-`62ca8a24acf4fdb262ae479587924fb36bf5604421b895a0b8b7accfb5eaed3a`.
+matches the deployed contract.
+
+**There are two hashes, and they differ on purpose:**
+
+- `62ca8a24acf4fdb262ae479587924fb36bf5604421b895a0b8b7accfb5eaed3a` — the
+  **Tranche 2 build**, and what is actually deployed at `CDTXVIA4…`.
+  Reproducible from tag `t2-scf-submission-2026-08-20`; verified 2026-08-25.
+- `2cec7e749d46b96a392be85dd284b8a988261ab7716b2218c7a5f39bbe2162db` — what
+  **the current tree** builds to as of 2026-09-01, after the Tranche 3 merge
+  and the `soroban-sdk` 27.0.6 lockfile bump. Not deployed anywhere yet; the
+  Tranche 3 mainnet deploy follows the SCF-funded audit.
+
+The testnet deployment is deliberately **not** being re-pointed at the current
+tree. `CDTXVIA4…` is cited in the approved Tranche 2 submission and in the
+Tranche 3 form's contract-address list, so it stays as the record of what was
+reviewed rather than moving mid-programme.
 
 Full testing methodology (coverage, mutation testing, fuzzing, static
 analysis, manual audit passes, security reviews): see `TESTING.md`.
