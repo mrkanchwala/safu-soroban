@@ -144,7 +144,19 @@ exclude_re = [
     # function-scoped pattern here would silently swallow it — the exact
     # failure mode that let vault.rs::withdraw_yield go unmeasured until
     # 2026-08-25. Re-anchor if extract_yield's lines shift.
-    "vault\\.rs:584:.*replace > with >= in extract_yield",
+    # RE-ANCHORED 2026-09-01 (merge): these two were pinned to :584 and :590
+    # against the pre-merge vault.rs. T3 added 239 lines and extract_yield
+    # moved from ~:578 to :806, so both anchors had drifted onto
+    # auto_deploy_liquidity's deposit path and matched nothing — the two
+    # already-triaged equivalent mutants would have resurfaced as false
+    # survivors in the next campaign. Verified against the merged file:
+    #   :815  xlm_received > principal_equiv   (zero-width boundary, equivalent)
+    #   :821  yield_amount > 0 -> set_total_extracted_yield  (writes n+0, equivalent)
+    #   :837  yield_amount > 0 -> treasury transfer  (REAL gap — NOT excluded,
+    #         killed by extract_yield_makes_no_treasury_transfer_when_there_is_no_yield)
+    # The line anchors are what keep :837 catchable. Do not widen to a
+    # function-scoped pattern; re-anchor again if vault.rs shifts.
+    "vault\\.rs:815:.*replace > with >= in extract_yield",
 
     # vault.rs extract_yield: `if yield_amount > 0 { set_total_extracted_yield
     # (get_total_extracted_yield(env) + yield_amount) }` -> `>=`. At
@@ -154,7 +166,7 @@ exclude_re = [
     # (storage.rs:366-370), so an absent entry and an entry holding 0 read
     # identically. Same reasoning as the activate_claim/withdraw entries above.
     # Line-anchored for the same reason as :584.
-    "vault\\.rs:590:.*replace > with >= in extract_yield",
+    "vault\\.rs:821:.*replace > with >= in extract_yield",
     # ---------------------------------------------------------------
     # Added 2026-08-24 after the full 144-mutant T3 campaign (134 caught,
     # 9 missed, 1 unviable). Six of the nine misses were REAL gaps and were
