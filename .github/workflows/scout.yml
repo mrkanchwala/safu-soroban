@@ -43,7 +43,12 @@ jobs:
           cat rust-toolchain.toml
 
       - name: Install cargo-scout-audit 0.3.16 (pinned)
-        run: cargo install cargo-scout-audit --version 0.3.16 --locked
+        id: install
+        continue-on-error: true
+        run: |
+          set +e
+          cargo install cargo-scout-audit --version 0.3.16 --locked 2>&1 | tee install-general.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Run Scout
         id: run
@@ -75,7 +80,9 @@ jobs:
         if: always()
         with:
           name: scout-general-log
-          path: scout-general.log
+          path: |
+            scout-general.log
+            install-general.log
           if-no-files-found: warn
 
   scout-soroban:
@@ -85,7 +92,25 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install cargo-scout-audit-soroban 0.2.2 (pinned)
-        run: cargo install cargo-scout-audit-soroban --version 0.2.2 --locked
+        id: install
+        continue-on-error: true
+        run: |
+          set +e
+          echo "== attempt 1: --locked (the crate's own lockfile) ==" | tee install-soroban.log
+          cargo install cargo-scout-audit-soroban --version 0.2.2 --locked 2>&1 | tee -a install-soroban.log
+          LOCKED=${PIPESTATUS[0]}
+          echo "locked_exit=$LOCKED" >> "$GITHUB_OUTPUT"
+          if [ "$LOCKED" -ne 0 ]; then
+            echo "" | tee -a install-soroban.log
+            echo "== attempt 2: fresh dependency resolve (no --locked) ==" | tee -a install-soroban.log
+            echo "Attempt 1 failed. 0.2.2's lockfile pins time v0.3.28, which hits" | tee -a install-soroban.log
+            echo "rustc E0282 and cannot compile on a current toolchain. Retrying" | tee -a install-soroban.log
+            echo "with a fresh resolve to separate 'stale pin' from 'unusable tool'." | tee -a install-soroban.log
+            cargo install cargo-scout-audit-soroban --version 0.2.2 2>&1 | tee -a install-soroban.log
+            echo "unlocked_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "unlocked_exit=skipped" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Discover the installed binary
         run: ls -la "$HOME/.cargo/bin" | tee cargo-bin.txt
@@ -114,7 +139,15 @@ jobs:
           {
             echo "## cargo-scout-audit-soroban 0.2.2"
             echo ""
-            echo "Exit code: \`${{ steps.run.outputs.exit_code }}\`"
+            echo "| Stage | Result |"
+            echo "|---|---|"
+            echo "| install \`--locked\` | \`${{ steps.install.outputs.locked_exit }}\` |"
+            echo "| install fresh resolve | \`${{ steps.install.outputs.unlocked_exit }}\` |"
+            echo "| scout run | \`${{ steps.run.outputs.exit_code }}\` |"
+            echo ""
+            echo "A \`--locked\` failure alone does not mean the tool is unusable —"
+            echo "it means the crate's pinned dependency set no longer builds. The"
+            echo "fresh-resolve attempt is what distinguishes the two."
             echo ""
             echo '```'
             tail -40 scout-soroban.log 2>/dev/null || echo "(no log produced)"
@@ -127,5 +160,6 @@ jobs:
           name: scout-soroban-log
           path: |
             scout-soroban.log
+            install-soroban.log
             cargo-bin.txt
           if-no-files-found: warn
