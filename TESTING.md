@@ -318,6 +318,76 @@ grep -rn "unsafe" --include="*.rs" src/
   §7 below — flagged there as a profile-dependent guarantee worth
   re-checking if the profile ever changes).
 
+## 5b. Symbolic verification — Komet (K framework)
+
+Komet (runtimeverification/komet) is the Soroban counterpart to Halmos, and
+appears on the SCF Audit Bank intake form's accepted-tooling list. It has two
+modes: `komet test` fuzzes properties over many random inputs, and
+`komet prove run` symbolically executes them, establishing a property for ALL
+inputs rather than sampled ones.
+
+**What it verifies.** Properties are written as a *second contract* that calls
+the one under test — `contracts/test-protection-pool`, with `kasmer.json`
+naming the contracts to compile and deploy. The property that matters is
+`test_solvency_invariant` (`total_allocated <= total_staked`). The staker is
+funded with 100,000 XLM-equivalent so a property can never pass merely because
+every transfer reverted.
+
+**Why the harness is a separate crate.** Making the pool directly
+Komet-deployable by gating `__constructor` behind a cargo feature was built,
+measured, and reverted: the optimised Wasm hash moved
+(`2cec7e74…` -> `024b4078…`) **with the feature disabled**, because
+`#[contractimpl]` emits a different contract spec. The harness therefore lives
+in its own crate that `#[path]`-includes the real modules, and all three
+harness crates are excluded from the workspace so they cannot reach the
+production build.
+
+### Running it
+
+Komet is **not self-contained**: `komet/kasmer.py:156` shells out to
+`stellar contract build`, so the environment needs `stellar` on PATH plus
+`cargo` and the `wasm32v1-none` target (that command compiles Rust).
+
+Two supported paths:
+
+```
+# 1. GitHub Actions — manual dispatch, produces the citable public artifact
+gh workflow run komet.yml --ref main
+
+# 2. Container — x86_64 only (the K toolchain ships x86_64)
+docker build -f Dockerfile.komet -t safu-komet .
+docker run --rm safu-komet bash -lc \
+  '. ~/.nix-profile/etc/profile.d/nix.sh; komet test -C contracts/test-protection-pool'
+docker run --rm safu-komet bash -lc \
+  '. ~/.nix-profile/etc/profile.d/nix.sh; komet prove run -C contracts/test-protection-pool'
+```
+
+The bare forms (`komet test`, `komet prove`) are not valid — `-C <dir>` is
+required, and `prove` takes the `run` subcommand. `komet` has no `--version`;
+it exits 2 without a subcommand, so use `--help`.
+
+The container image verifies its own toolchain at build time and prints
+`TOOLCHAIN COMPLETE`, so a broken image cannot silently reach the test step.
+
+### Reading the result — a green tick is not a result
+
+**Judge Komet by its exit code, never by grepping its log.** Both
+`komet test` and `komet prove run` must exit **0 with non-empty output**.
+
+This is not theoretical. CI run 33481585123 reported *"Verdict: properties
+checked — results above are real"* while both invocations had crashed in under
+a second with `RuntimeError: Couldn't find 'stellar' executable` — the log grep
+looked for `^error`, which `RuntimeError:` does not match. An absent finding is
+not a clean finding and must never be cited as one.
+
+### Status
+
+**No Komet result is claimed in this document yet.** The environment is proven
+(toolchain verified, both harness contracts build) but the property tests had
+not produced a completed result at the time of writing. This section will carry
+the numbers once they exist; until then Komet is listed as tooling in use, not
+as evidence.
+
 ## 6. Manual V8-parity verification — 4 escalating passes
 
 Every mechanic was checked against the live `SAFUPoolV8.sol` source
@@ -395,10 +465,12 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
 
 ## 8. What this does NOT cover — the honest ceiling
 
-- **No formal/symbolic verification.** V8's Solidity contract has 10/10
-  Halmos properties proven with zero counterexamples. No direct Soroban
-  equivalent exists (see §4); Certora Sunbeam is the real answer and is
-  deliberately deferred to Tranche 3's SCF-funded audit.
+- **No *completed* formal/symbolic verification result yet.** V8's Solidity
+  contract has 10/10 Halmos properties proven with zero counterexamples. The
+  Soroban equivalent is **Komet**, and it is now wired up (§5b) rather than
+  absent — but it has not yet produced a citable result, so nothing here rests
+  on it. Certora Sunbeam remains the heavier answer, deliberately deferred to
+  Tranche 3's SCF-funded audit.
 - **No external human audit yet.** Everything above is internal
   (self-run tooling + manual review), which is why Tranche 3 budgets a
   real external audit through the SCF Audit Bank.
@@ -411,5 +483,7 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
 All commands above run from the repo root (or `contracts/protection-pool`
 where noted) with: `rustc`/`cargo` (stable + nightly), `wasm32v1-none`
 target, `cargo-fuzz`, `cargo-audit`, `cargo-llvm-cov`, `cargo-mutants`,
-and `stellar-cli`. No deployment, network access, or secrets required for
+and `stellar-cli`. Komet (§5b) is the one exception: it is installed via
+Nix/kup and is run either in CI or in the `Dockerfile.komet` container,
+never on a workstation. No deployment, network access, or secrets required for
 any check in this document.
