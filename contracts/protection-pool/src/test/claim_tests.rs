@@ -565,45 +565,77 @@ fn submit_claim_at_exactly_claim_window_boundary_succeeds() {
 }
 
 #[test]
-fn submit_claim_insolvent_panics() {
+fn submit_claim_insolvent_queues_instead_of_rejecting() {
+    // T3 (2026-08-24): Insolvent no longer hard-rejects — it queues
+    // (ClaimStatus::Reserved) so the genuine incident is re-triable once
+    // total_staked/total_allocated state changes, instead of vanishing.
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     // Only MID_STAKE (100_000_000) actually backing the pool; ask for
     // more than that even though it's under the tier C cap (500_000_000).
+    let entitlement = MID_STAKE + 1;
     let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
-        &(MID_STAKE + 1),
+        &entitlement,
         &TIER_C,
         &now_ts(&env),
     );
-    assert_eq!(result, Err(Ok(PoolError::Insolvent)));
+    let claim_id = result.unwrap().unwrap();
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Reserved);
+    assert_eq!(claim.entitlement, entitlement);
+    // Queuing must NOT touch capacity accounting — that's the entire point:
+    // it wasn't actually admitted.
+    assert_eq!(s.client.get_total_allocated(), 0);
+    // Second submission for the same wallet, different claim, must be
+    // rejected while one is Reserved.
+    let blocked = try_submit_claim_signed(&env, &s, &s.oracle,
+        &staker,
+        &tx_hash(&env, 2),
+        &1,
+        &TIER_C,
+        &now_ts(&env),
+    );
+    assert_eq!(blocked, Err(Ok(PoolError::ClaimAlreadyQueued)));
 }
 
 #[test]
-fn submit_claim_exceeds_stress_cap_panics() {
+fn submit_claim_exceeds_stress_cap_queues_instead_of_rejecting() {
+    // T3 (2026-08-24): same as the Insolvent case above — DailyStressCapExceeded
+    // now queues instead of hard-rejecting.
     let env = new_env();
     let s = setup(&env);
     let (staker, _ben) = staked_wallet(&env, &s);
     // stress_cap at 0% utilization = 25% of total_staked = 25_000_000.
     // Ask for more than that but still within solvency/tier bounds.
+    let entitlement = 26_000_000;
     let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker,
         &tx_hash(&env, 1),
-        &26_000_000,
+        &entitlement,
         &TIER_C,
         &now_ts(&env),
     );
-    assert_eq!(result, Err(Ok(PoolError::DailyStressCapExceeded)));
+    let claim_id = result.unwrap().unwrap();
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Reserved);
+    assert_eq!(claim.entitlement, entitlement);
 }
 
 #[test]
-fn submit_claim_oracle_rate_limit_panics() {
+fn submit_claim_oracle_rate_limit_queues() {
+    // T3 (2026-08-24, second pass): the oracle's own daily submission-count
+    // throttle now QUEUES rather than hard-rejecting, same as the capacity
+    // limits. The limit still binds — the second claim is not admitted — but
+    // a genuine hack is no longer lost because the oracle already filed its
+    // quota that day. This matters most in a mass incident, which is exactly
+    // when `total_stakers / 10` is most likely to bite.
     let env = new_env();
     let s = setup(&env);
     // total_stakers/10 max(1) == 1 with a single staker — the SECOND
-    // oracle-submitted claim same day must be rejected even though it's
+    // oracle-submitted claim same day must not be ADMITTED even though it's
     // a different wallet.
     let (staker1, _b1) = staked_wallet(&env, &s);
     let (staker2, _b2) = staked_wallet(&env, &s);
@@ -614,6 +646,8 @@ fn submit_claim_oracle_rate_limit_panics() {
         &TIER_C,
         &now_ts(&env),
     );
+    let allocated_after_first = s.client.get_total_allocated();
+
     let result = try_submit_claim_signed(&env, &s, &s.oracle,
         &staker2,
         &tx_hash(&env, 2),
@@ -621,7 +655,14 @@ fn submit_claim_oracle_rate_limit_panics() {
         &TIER_C,
         &now_ts(&env),
     );
-    assert_eq!(result, Err(Ok(PoolError::OracleDailyClaimLimitReached)));
+    let claim_id = result.unwrap().unwrap();
+    let claim = s.client.get_claim(&claim_id).unwrap();
+    assert_eq!(claim.status, ClaimStatus::Reserved);
+    assert_eq!(claim.entitlement, ENTITLEMENT);
+    // The throttle still does its job: nothing extra was admitted, so no
+    // capacity was consumed by the queued claim.
+    assert_eq!(s.client.get_total_allocated(), allocated_after_first);
+    assert!(s.client.get_stake(&staker2).unwrap().reserved_claim_id.is_some());
 }
 
 #[test]

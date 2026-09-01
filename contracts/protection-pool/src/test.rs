@@ -24,3 +24,8 @@ mod profiling_tests;
 mod solvency_tests;
 mod stake_tests;
 mod t2_mutation_gap_tests;
+/// T3 (2026-08-24) — admission-side retry queue, bidirectional liquidity
+/// rebalancing (`ensure_liquidity`/`auto_deploy_liquidity`), and the
+/// `total_staked` shortfall reconciliation. Split out for the same reason
+/// as `d2_vault_tests`: new mechanic, not existing pool mechanics.
+mod t3_flags_tests;

@@ -258,6 +258,20 @@ impl ProtectionPool {
         claim::unlock_pending_claim(&env, &claim_id)
     }
 
+    /// T3 (2026-08-24) — permissionless. Re-checks a queued claim's original
+    /// blocker (`DailyStressCapExceeded`/`Insolvent`) against current state;
+    /// admits it for real if that now passes, otherwise returns
+    /// `QueueReleaseNotYetEligible` and it stays `Reserved`.
+    pub fn try_release_queued_claim(env: Env, claim_id: BytesN<32>) -> Result<(), PoolError> {
+        claim::try_release_queued_claim(&env, &claim_id)
+    }
+
+    /// T3 (2026-08-24) — permissionless. Sweeps a queued claim whose claim
+    /// window ran out before capacity ever freed.
+    pub fn expire_queued_claim(env: Env, claim_id: BytesN<32>) -> Result<(), PoolError> {
+        claim::expire_queued_claim(&env, &claim_id)
+    }
+
     /// NEW 2026-07-22 (Rule A) — staker-authorized. Burns the wallet's
     /// entire lifetime points balance, forfeits the stake, starts
     /// cooldown/vesting. Must be called within `APPROVE_WINDOW_LEDGERS` of
@@ -409,6 +423,17 @@ impl ProtectionPool {
         vault::deploy_to_vault(&env, amount, min_shares_out)
     }
 
+    /// T3 (2026-08-24) — permissionless sibling of `deploy_to_vault`. Puts
+    /// idle liquidity (above what's reserved for live claims) to work
+    /// automatically, up to the existing `deploy_bps` ceiling. No caller
+    /// input — the contract computes the amount and its own slippage
+    /// floor. Requires at least one prior manual `deploy_to_vault` call
+    /// (needs a reference rate); returns 0 if nothing's idle or no room
+    /// remains under the ceiling.
+    pub fn auto_deploy_liquidity(env: Env) -> Result<i128, PoolError> {
+        vault::auto_deploy_liquidity(&env)
+    }
+
     /// Redeem shares so the XLM sits liquid in the contract, ready to fund
     /// payouts and withdrawals. Nothing leaves the pool. Works while
     /// paused, deliberately — `emergency_exit` depends on it.
@@ -418,6 +443,14 @@ impl ProtectionPool {
         min_xlm_out: i128,
     ) -> Result<i128, PoolError> {
         vault::provide_liquidity(&env, shares, min_xlm_out)
+    }
+
+    /// T3 (2026-08-24) — permissionless sibling of `provide_liquidity`.
+    /// Pulls back only enough to cover `total_allocated` if liquid balance
+    /// is short of it. No caller input. Works while paused, same reasoning
+    /// as `provide_liquidity`. Returns 0 if nothing's short.
+    pub fn ensure_liquidity(env: Env) -> Result<i128, PoolError> {
+        vault::ensure_liquidity(&env)
     }
 
     /// Redeem a tranche and send only the excess above proportional

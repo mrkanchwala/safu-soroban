@@ -1,9 +1,9 @@
 # CI — added 2026-08-21.
 #
 # Purpose is evidential, not just hygienic. The README tells SCF reviewers that
-# the test suite passes (250 tests as of 2026-08-25) and that `cargo deny` is
-# clean; before this workflow existed a reviewer had to take both on trust,
-# or clone and build the repo themselves.
+# the test suite passes and that `cargo deny` is clean; before this workflow
+# existed a reviewer had to take both on trust, or clone and build the repo
+# themselves.
 # This makes each claim a link they can click.
 #
 # Runs on every branch deliberately, not just `main`, so a change can be proven

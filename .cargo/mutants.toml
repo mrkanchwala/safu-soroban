@@ -41,22 +41,33 @@ exclude_re = [
     "replace > with >= in ProtectionPool::is_eligible",
     "replace > with >= in ProtectionPool::is_claim_eligible",
 
-    # claim.rs activate_claim / stake.rs withdraw: `if points > 0 {
-    # set_points_balance(banked + points) }` → `>=`. Equivalent: when
-    # points == 0 the mutant writes banked + 0 — the same value the
-    # original leaves in place (get_points_balance falls back to
-    # unwrap_or(0) for an absent entry, so entry-existence itself is
-    # not observable either).
-    "replace > with >= in activate_claim",
-    # RE-ANCHORED 2026-08-25 — this pattern is a SUBSTRING match, and it was
-    # silently swallowing vault.rs::withdraw_yield's two balance-gate mutants
-    # (:628 and :631), a T2 function this justification was never written
-    # about. Those gates are the double gate that stops treasury withdrawals
-    # from eating staker principal, and they are NOT equivalent: the original
-    # ALLOWS `amount == balance` (withdraw exactly the full yield) where the
-    # `>=` mutant rejects it — directly observable, killable by one test.
-    # Anchored to stake.rs so it cannot leak again. File-level, not line-level,
-    # deliberately: line anchors drift (see the stake.rs:137 re-anchor above).
+    # stake.rs withdraw: `if final_points > 0 { set_points_balance(banked +
+    # points) }` -> `>=`. Equivalent: when points == 0 the mutant writes
+    # banked + 0 — the same value the original leaves in place
+    # (get_points_balance falls back to unwrap_or(0) for an absent entry, so
+    # entry-existence itself is not observable either).
+    #
+    # REMOVED 2026-08-24 (T3 campaign): the companion "replace > with >= in
+    # activate_claim" entry. Its target (`if points > 0` inside
+    # activate_claim) no longer exists — claim.rs:394 now burns the balance
+    # unconditionally (`set_points_balance(env, &claim.wallet, 0)`, the
+    # 2026-07-22 Rule A change). activate_claim's body contains no `>`
+    # operator at all, so the pattern matched zero mutants; leaving it would
+    # silently swallow a real mutant if that function ever regains one.
+    #
+    # RE-ANCHORED 2026-08-25 (T1->T2 campaign) — this pattern is a SUBSTRING
+    # match, and unanchored it was silently swallowing vault.rs::
+    # withdraw_yield's two balance-gate mutants (:628 and :631), a T2
+    # function this justification was never written about. Those gates stop
+    # treasury withdrawals from eating staker principal, and they are NOT
+    # equivalent: the original ALLOWS `amount == balance` (withdraw exactly
+    # the full yield) where the `>=` mutant rejects it — directly observable,
+    # killable by one test. Anchored to stake.rs so it cannot leak again.
+    # File-level, not line-level, deliberately: line anchors drift.
+    #
+    # MERGE 2026-09-01: the two changes above were made independently in
+    # different trees and are both correct — T3 dropped the dead entry, the
+    # later T2 campaign anchored this one. Both kept.
     "stake\\.rs:.*replace > with >= in withdraw",
 
     # stake.rs compute_points_for_record entry guard: `record.amount <= 0
@@ -144,4 +155,50 @@ exclude_re = [
     # identically. Same reasoning as the activate_claim/withdraw entries above.
     # Line-anchored for the same reason as :584.
     "vault\\.rs:590:.*replace > with >= in extract_yield",
+    # ---------------------------------------------------------------
+    # Added 2026-08-24 after the full 144-mutant T3 campaign (134 caught,
+    # 9 missed, 1 unviable). Six of the nine misses were REAL gaps and were
+    # closed with tests in src/test/t3_flags_tests.rs. These three are the
+    # provably-equivalent remainder.
+    # ---------------------------------------------------------------
+
+    # vault.rs auto_deploy_liquidity + ensure_liquidity bootstrap guard:
+    # `deployed_shares <= 0 || deployed_xlm <= 0` → `&&`. Equivalent
+    # because the two figures are always both-zero or both-nonzero, so no
+    # state exists where one guard admits and the other rejects:
+    #   • every deposit writes both together (vault.rs:500/501 and
+    #     595/596), and a deposit that mints zero shares is rejected by the
+    #     min_shares_out floor before those writes are reached;
+    #   • every redeem writes both together (655/656) using
+    #     principal_equiv = deployed_xlm * shares / deployed_shares (638),
+    #     which on a FULL redeem (shares == deployed_shares) equals
+    #     deployed_xlm exactly — both land on zero in the same step;
+    #   • a PARTIAL redeem leaves both strictly positive, since
+    #     principal_equiv truncates DOWN and so stays below deployed_xlm.
+    "replace \\|\\| with && in auto_deploy_liquidity",
+    "replace \\|\\| with && in ensure_liquidity",
+
+    # vault.rs auto_deploy_liquidity allocation guard, the SUBTRACTION only
+    # (`liquid - amount` → `liquid + amount` at vault.rs:563:15). The
+    # original condition is unreachable-false, and so is the mutant:
+    #   idle = (liquid - total_allocated).max(0), and the function already
+    #   returned at `idle == 0`, so idle == liquid - total_allocated > 0.
+    #   amount = idle.min(room) <= idle, therefore
+    #   liquid - amount >= liquid - idle == total_allocated — never `<`.
+    #   The mutant `liquid + amount < total_allocated` is likewise always
+    #   false, since liquid >= total_allocated and amount > 0.
+    #
+    # SCOPED TO THE SUBTRACTION DELIBERATELY. The COMPARISON mutants on this
+    # same line (563:24, `<` → `==` and `<` → `<=`) are NOT equivalent:
+    # both flip TRUE when amount == idle, which is reachable whenever ceiling
+    # room exceeds idle. They are real gaps, now killed by
+    # auto_deploy_liquidity_deploys_exactly_idle_when_idle_is_the_binding_constraint.
+    # A line-wide exclusion here would have hidden two genuine defects —
+    # triage per-mutant, never per-line.
+    #
+    # LINE-NUMBER SENSITIVE (same caveat as the stake.rs:137 entry above):
+    # the 563:15 anchor is what keeps this scoped to the subtraction and
+    # off the two catchable comparison mutants at 563:24. Re-anchor if
+    # vault.rs lines shift.
+    "vault\\.rs:563:15:.*replace - with \\+ in auto_deploy_liquidity",
 ]

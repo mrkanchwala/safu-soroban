@@ -49,7 +49,7 @@ use soroban_sdk::{
 
 use crate::error::PoolError;
 use crate::storage;
-use crate::types::{DEPLOY_BPS_DENOMINATOR, MAX_DEPLOY_BPS};
+use crate::types::{BPS_DENOMINATOR, DEPLOY_BPS_DENOMINATOR, MAX_DEPLOY_BPS, MAX_REBALANCE_SLIPPAGE_BPS};
 
 // -----------------------------------------------------------------------
 // Vault client — minimal by design.
@@ -113,6 +113,27 @@ pub struct LiquidityProvided {
     pub vault: Address,
     pub shares_redeemed: i128,
     pub xlm_received: i128,
+}
+
+/// T3 (2026-08-24) — `ensure_liquidity`'s permissionless-triggered pull.
+/// Distinct from `LiquidityProvided` so on-chain monitoring can tell an
+/// automatic rebalance apart from an admin's manual `provide_liquidity`.
+#[contractevent]
+pub struct LiquidityAutoRebalanced {
+    #[topic]
+    pub vault: Address,
+    pub shares_redeemed: i128,
+    pub xlm_received: i128,
+}
+
+/// T3 (2026-08-24) — `auto_deploy_liquidity`'s permissionless-triggered
+/// push, the deposit-side mirror of `LiquidityAutoRebalanced`.
+#[contractevent]
+pub struct LiquidityAutoDeployed {
+    #[topic]
+    pub vault: Address,
+    pub xlm_amount: i128,
+    pub shares_gained: i128,
 }
 
 #[contractevent]
@@ -184,9 +205,21 @@ pub fn require_liquidity(env: &Env, amount: i128) -> Result<(), PoolError> {
 /// V8 `yieldBalance()` (`:854`): everything the pool controls, minus what
 /// it owes stakers. Returns 0 while all principal is deployed and no yield
 /// has been realised.
+///
+/// **T3 fix (2026-08-24): also subtracts `total_allocated`.** Without it,
+/// a forfeited-but-not-yet-paid claim reads as yield: `activate_claim`
+/// decrements `total_staked` by the forfeited principal the moment a
+/// claim activates, but the XLM itself doesn't move — it stays liquid/
+/// deployed, earmarked via `total_allocated` for the claimant. Live-found
+/// 2026-08-20: two activated claims made this read +4,100 XLM "yield"
+/// that was really the claimants' own forfeited principal. Subtracting
+/// `total_allocated` too closes exactly that gap — it's 0 again once the
+/// claim is fully streamed (`total_allocated` decrements per-transfer in
+/// `claim_stream`) and correctly stays positive only for genuine surplus
+/// (e.g. a tier ratio below 100%, where less was promised than forfeited).
 pub fn yield_balance(env: &Env) -> i128 {
     let total = liquid_balance(env) + storage::get_total_deployed_xlm(env);
-    let reserved = storage::get_total_staked(env);
+    let reserved = storage::get_total_staked(env) + storage::get_total_allocated(env);
     if total > reserved {
         total - reserved
     } else {
@@ -242,8 +275,18 @@ pub fn set_treasury(env: &Env, treasury: &Address) -> Result<(), PoolError> {
 }
 
 /// Hard-capped at `MAX_DEPLOY_BPS` so an admin cannot configure this pool
-/// into V8's 100%-deployed posture even deliberately. Lowering it does not
-/// force an unwind — it only constrains future `deploy_to_vault` calls.
+/// into V8's 100%-deployed posture even deliberately.
+///
+/// **CHANGED 2026-08-24 (T3).** This previously read "lowering it does not
+/// force an unwind — it only constrains future `deploy_to_vault` calls."
+/// That is no longer true: `ensure_liquidity` now treats `deploy_bps` as a
+/// live two-way rebalancing line, so once it is lowered, the next
+/// `ensure_liquidity` call (permissionless — anyone can make it) will redeem
+/// back down to the new ceiling. Lowering this is now an operational action
+/// with a real redemption behind it, not just a constraint on future calls.
+/// The redemption is still bounded by `MAX_REBALANCE_SLIPPAGE_BPS`, so a
+/// drop large enough to move the vault's share price beyond that simply
+/// reverts rather than executing at a bad rate.
 pub fn set_deploy_bps(env: &Env, bps: i128) -> Result<(), PoolError> {
     let admin = storage::get_admin(env);
     admin.require_auth();
@@ -468,6 +511,101 @@ pub fn deploy_to_vault(
     Ok(shares_gained)
 }
 
+/// T3 (2026-08-24) — the permissionless sibling of `deploy_to_vault`, the
+/// deposit-side mirror of `ensure_liquidity`. Locked scope 2026-08-24: put
+/// idle liquidity to work automatically once staking inflow builds up,
+/// same "nothing caller-controlled" rule as the pull direction.
+///
+/// **Bootstrapping constraint:** the vault exposes no on-chain price quote,
+/// so there's nothing to check a deposit's exchange rate against until the
+/// contract has its OWN prior deposit to reference
+/// (`deployed_xlm / deployed_shares`). The very first deposit into a fresh
+/// vault still has to be the existing manual `deploy_to_vault` call — this
+/// function only activates once `deployed_shares > 0`.
+///
+/// `require_not_paused` stays, mirroring `deploy_to_vault` — unlike
+/// pulling liquidity back (the pause-time escape path), pushing MORE money
+/// into a third-party venue while something's wrong should not happen
+/// automatically.
+pub fn auto_deploy_liquidity(env: &Env) -> Result<i128, PoolError> {
+    storage::require_not_paused(env)?;
+
+    let deployed_shares = storage::get_total_deployed_shares(env);
+    let deployed_xlm = storage::get_total_deployed_xlm(env);
+    if deployed_shares <= 0 || deployed_xlm <= 0 {
+        // Bootstrapping: no prior deposit to reference a safe rate against.
+        return Err(PoolError::NothingDeployed);
+    }
+
+    let liquid = liquid_balance(env);
+    let total_allocated = storage::get_total_allocated(env);
+    let idle = (liquid - total_allocated).max(0);
+    if idle == 0 {
+        return Ok(0);
+    }
+
+    let total_staked = storage::get_total_staked(env);
+    let ceiling = total_staked * storage::get_deploy_bps(env) / DEPLOY_BPS_DENOMINATOR;
+    let room = (ceiling - deployed_xlm).max(0);
+    if room == 0 {
+        return Ok(0);
+    }
+
+    let amount = idle.min(room);
+
+    let vault_addr = storage::get_vault(env).ok_or(PoolError::VaultNotSet)?;
+
+    // Floor: never deploy XLM reserved for a live claim — same guard
+    // `deploy_to_vault` enforces. Structurally unreachable given `idle`'s
+    // computation above (kept as defence in depth, same style as the rest
+    // of this module, against the two figures drifting apart between the
+    // read and the deposit).
+    if liquid - amount < total_allocated {
+        return Err(PoolError::DeployBreachesAllocation);
+    }
+
+    // Reference rate from the contract's own last-known deposits — the
+    // only price data available on-chain (see doc comment above).
+    let expected_shares = amount * deployed_shares / deployed_xlm;
+    let min_shares_out =
+        expected_shares * (BPS_DENOMINATOR - MAX_REBALANCE_SLIPPAGE_BPS) / BPS_DENOMINATOR;
+
+    let vault = VaultClient::new(env, &vault_addr);
+    let shares_before = vault.balance(&env.current_contract_address());
+
+    let mut desired = Vec::new(env);
+    desired.push_back(amount);
+    let mut mins = Vec::new(env);
+    mins.push_back(amount);
+
+    authorize_deposit(env, &vault_addr, &desired, &mins, amount);
+
+    vault.deposit(
+        &desired,
+        &mins,
+        &env.current_contract_address(),
+        &true,
+    );
+
+    let shares_gained = vault.balance(&env.current_contract_address()) - shares_before;
+    if shares_gained < min_shares_out {
+        return Err(PoolError::MinSharesNotMet);
+    }
+
+    storage::set_total_deployed_shares(env, deployed_shares + shares_gained);
+    storage::set_total_deployed_xlm(env, deployed_xlm + amount);
+    storage::bump_instance_ttl(env);
+
+    LiquidityAutoDeployed {
+        vault: vault_addr,
+        xlm_amount: amount,
+        shares_gained,
+    }
+    .publish(env);
+
+    Ok(shares_gained)
+}
+
 // -----------------------------------------------------------------------
 // Redemption — shared core for provide_liquidity and extract_yield.
 // -----------------------------------------------------------------------
@@ -518,6 +656,20 @@ fn redeem(
     storage::set_total_deployed_xlm(env, deployed_xlm - principal_equiv);
 
     if xlm_received < principal_equiv {
+        // T3 fix (2026-08-24): mark the loss down in total_staked, not just
+        // the event. Before this, a real vault-level loss (DeFindex/Blend
+        // bad debt or slippage beyond the caller's floor) fired
+        // DeploymentShortfall but left total_staked exactly where it was —
+        // the solvency check (`total_allocated <= total_staked`, claim.rs)
+        // would then evaluate future claims against a figure that
+        // overstates what the pool actually holds. Pure pool-wide
+        // aggregate, never a per-staker balance (`stake_record.amount` is
+        // separate and untouched), so this only tightens the ceiling for
+        // FUTURE claims — it cannot retroactively shrink an already-Active
+        // claim's `entitlement` (snapshotted at admission).
+        let shortfall = principal_equiv - xlm_received;
+        storage::set_total_staked(env, storage::get_total_staked(env).saturating_sub(shortfall));
+
         DeploymentShortfall {
             vault: vault_addr.clone(),
             principal_expected: principal_equiv,
@@ -555,6 +707,85 @@ pub fn provide_liquidity(
     LiquidityProvided {
         vault: vault_addr,
         shares_redeemed: shares,
+        xlm_received,
+    }
+    .publish(env);
+
+    Ok(xlm_received)
+}
+
+/// T3 (2026-08-24) — the permissionless sibling of `provide_liquidity`.
+/// Locked design (2026-08-20 job): the CONTRACT computes both the amount
+/// and the slippage floor — nothing caller-controlled, so a public
+/// function can't be used to force an unwind at a bad price for zero
+/// personal gain (the naive "just make `provide_liquidity` public" version
+/// was flagged unsafe for exactly this reason).
+///
+/// Target is `total_allocated` — the same figure `deploy_to_vault` already
+/// protects on the way IN (`DeployBreachesAllocation`: never deploy XLM
+/// reserved for a live claim). This closes the gap the other direction:
+/// pull back only enough to cover what's currently reserved, no more.
+///
+/// No `require_not_paused`, same reasoning as `provide_liquidity` above —
+/// this IS the pause-time liquidity-restoring path.
+pub fn ensure_liquidity(env: &Env) -> Result<i128, PoolError> {
+    let liquid = liquid_balance(env);
+    let total_allocated = storage::get_total_allocated(env);
+    let deployed_shares = storage::get_total_deployed_shares(env);
+    let deployed_xlm = storage::get_total_deployed_xlm(env);
+
+    // TWO independent reasons to pull, added 2026-08-24 — the function
+    // originally covered only the first, which left the pair asymmetric:
+    // `auto_deploy_liquidity` pushed against the `deploy_bps` line while
+    // this pulled against an unrelated absolute figure.
+    //
+    // 1. CLAIMS SHORTFALL — liquid XLM is below what active claims are
+    //    owed. Absolute, not proportional: what matters is that a payout
+    //    can physically settle.
+    let claims_shortfall = (total_allocated - liquid).max(0);
+    //
+    // 2. OVER-CEILING DRIFT — the vault position is a larger share of the
+    //    pool than `deploy_bps` allows. This is the case the founder
+    //    identified 2026-08-24: stakers withdrawing shrinks `total_staked`
+    //    while `deployed_xlm` is unchanged, so the RATIO climbs above the
+    //    configured line without a single new deployment. `vault.rs`
+    //    previously documented this as "drift, not a breach... resolved by
+    //    an admin `provide_liquidity`" — i.e. it needed a human. Now the
+    //    same `deploy_bps` number governs both directions and it
+    //    self-corrects.
+    let ceiling = storage::get_total_staked(env) * storage::get_deploy_bps(env)
+        / DEPLOY_BPS_DENOMINATOR;
+    let over_ceiling = (deployed_xlm - ceiling).max(0);
+
+    // Whichever need is larger — satisfying the bigger one satisfies both.
+    let shortfall = claims_shortfall.max(over_ceiling);
+    if shortfall == 0 {
+        return Ok(0);
+    }
+
+    if deployed_shares <= 0 || deployed_xlm <= 0 {
+        // Nothing deployed to pull from — `redeem` would report this
+        // itself, but returning it directly here avoids computing a
+        // division against a zero denominator below.
+        return Err(PoolError::NothingDeployed);
+    }
+
+    // Never try to redeem more than what's actually deployed — a shortfall
+    // larger than the vault position is a real "money nowhere" case
+    // `redeem`'s own `RedeemExceedsDeployed` guard would catch anyway;
+    // capping here just picks the best-effort amount instead of erroring
+    // out entirely when a partial rescue is still possible.
+    let shares_needed = (shortfall * deployed_shares / deployed_xlm).min(deployed_shares);
+    let expected_xlm = deployed_xlm * shares_needed / deployed_shares;
+    let min_xlm_out = expected_xlm * (BPS_DENOMINATOR - MAX_REBALANCE_SLIPPAGE_BPS) / BPS_DENOMINATOR;
+
+    let vault_addr = storage::get_vault(env).ok_or(PoolError::VaultNotSet)?;
+    let (xlm_received, _principal) = redeem(env, &vault_addr, shares_needed, min_xlm_out)?;
+    storage::bump_instance_ttl(env);
+
+    LiquidityAutoRebalanced {
+        vault: vault_addr,
+        shares_redeemed: shares_needed,
         xlm_received,
     }
     .publish(env);

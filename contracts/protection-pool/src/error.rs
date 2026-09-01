@@ -181,4 +181,29 @@ pub enum PoolError {
     /// Pool is paused. `stake::emergency_exit` and `vault::provide_liquidity`
     /// remain callable by design — they are the pause-time escape path.
     Paused = 93,
+
+    // -- claim.rs / T3 admission-side retry queue (94-97) --
+    //
+    // APPENDED at 94, never renumbered into 1-93. Error codes are public
+    // ABI. Scope: `DailyStressCapExceeded`, `Insolvent`, and (added later
+    // the same day) `OracleDailyClaimLimitReached` all queue as
+    // `ClaimStatus::Reserved` — the existing-but-previously-unused status
+    // value. The shared property is that the claim is genuine and merely
+    // un-admittable right now for a reason the claimant does not control.
+    // Logic errors (bad tier, expired window, hack predating the stake)
+    // still hard-reject. Full reasoning, including why the oracle counter
+    // was first excluded and then included, is in `submit_claim`.
+    /// A wallet already has a `Reserved` claim pending — one at a time,
+    /// same invariant `active_claim_id` already enforces for live claims.
+    ClaimAlreadyQueued = 94,
+    /// `try_release_queued_claim`/`expire_queued_claim` called on a
+    /// `claim_id` that isn't currently `Reserved`.
+    NoSuchQueuedClaim = 95,
+    /// `try_release_queued_claim` called but the original blocker
+    /// (`DailyStressCapExceeded`/`Insolvent`) still applies today — not a
+    /// failure, just "still blocked, try again."
+    QueueReleaseNotYetEligible = 96,
+    /// `expire_queued_claim` called before `hack_timestamp +
+    /// CLAIM_WINDOW_SECONDS` has actually passed.
+    QueueNotYetExpired = 97,
 }

@@ -176,6 +176,7 @@ pub fn stake(
         withdrawn: false,
         suspended: false,
         active_claim_id: None,
+        reserved_claim_id: None,
     };
     storage::set_stake(env, staker, &record);
     storage::set_total_staked(env, total_staked + amount);
