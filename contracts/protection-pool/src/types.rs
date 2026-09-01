@@ -160,6 +160,14 @@ pub const MAX_DEPLOY_BPS: i128 = 8_000;
 /// had to add `oracle_pubkey`.
 pub const DEPLOY_BPS_DENOMINATOR: i128 = 10_000;
 
+/// T3 (2026-08-24): max slippage `ensure_liquidity`/`auto_deploy_liquidity`
+/// will accept on their own contract-computed redemption/deposit — nothing
+/// caller-controlled, per the 2026-08-20 locked design. 500 = 5%. Applies
+/// to both directions: a redeem accepts down to 95% of expected XLM, a
+/// deposit requires at least 95% of the shares the contract's own
+/// last-known rate (`deployed_xlm / deployed_shares`) would predict.
+pub const MAX_REBALANCE_SLIPPAGE_BPS: i128 = 500;
+
 // -----------------------------------------------------------------------
 // Stake bounds — dynamic, as basis points of the configurable pool cap,
 // not fixed amounts. Decided 2026-07-14 (user): V8's fixed ETH bounds
@@ -266,6 +274,14 @@ pub struct StakeRecord {
     /// withdrawal, same as the old bool); `None` once terminal
     /// (Completed/Cancelled/Expired) or never claimed.
     pub active_claim_id: Option<BytesN<32>>,
+    /// T3 (2026-08-24): `Some(claim_id)` while a `submit_claim` for this
+    /// wallet is sitting in `ClaimStatus::Reserved` (rejected for
+    /// `DailyStressCapExceeded`/`Insolvent`, not yet released or expired).
+    /// Deliberately separate from `active_claim_id` — a Reserved claim
+    /// isn't "active" (it holds no capacity reservation: `total_allocated`
+    /// is untouched until release), but the wallet still can't queue a
+    /// second one without this guard.
+    pub reserved_claim_id: Option<BytesN<32>>,
 }
 
 // -----------------------------------------------------------------------

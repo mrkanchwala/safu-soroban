@@ -33,11 +33,18 @@
 //! either. Both halves of this integration's auth surface are now measured
 //! against the deployed contract rather than inferred.
 //!
-//! One asymmetry to keep in mind when reading the mock: it mints shares 1:1,
-//! where the real vault does not (10,000,000 stroops bought 5,996 dfTokens).
-//! That is deliberate — it keeps the accounting assertions readable — and it
-//! is safe because `deploy_to_vault` measures shares by balance delta rather
-//! than assuming any rate.
+//! The mock mints shares 1:1 BY DEFAULT, where the real vault does not
+//! (10,000,000 stroops bought 5,996 dfTokens). That default keeps the
+//! accounting assertions readable, and it was safe for D2 because
+//! `deploy_to_vault` measures shares by balance delta rather than assuming a
+//! rate.
+//!
+//! **T3 (2026-08-24) made that no longer sufficient on its own.** T3 added
+//! share-price arithmetic (`expected_shares`, and a `min_shares_out` slippage
+//! floor computed from it) which a 1:1 rate collapses to a no-op — a
+//! cargo-mutants run showed every mutation of that formula surviving. Use
+//! `set_deposit_rate_bps` to mint non-1:1 when exercising anything that reads
+//! the rate; the 1:1 default remains for every test that does not.
 
 #![cfg(test)]
 
@@ -64,6 +71,19 @@ use crate::types::{COOLDOWN_LEDGERS, LEDGERS_PER_DAY};
 pub enum MockKey {
     Token,
     RateBps,
+    /// T3 (2026-08-24): shares minted per unit deposited, in bps. Defaults to
+    /// 10_000 (1:1) so every pre-existing test is unaffected.
+    ///
+    /// Added because the 1:1 default made T3's new share-price arithmetic
+    /// structurally untestable: with `deployed_shares == deployed_xlm`,
+    /// `expected_shares = amount * shares / xlm` collapses to `amount`, and a
+    /// cargo-mutants run showed every mutation of that formula and of
+    /// `min_shares_out` surviving. The module header above calls the 1:1
+    /// simplification "safe because deploy_to_vault measures shares by
+    /// balance delta" — true before T3, but T3 added a slippage floor COMPUTED
+    /// from the rate, which a 1:1 mock can never exercise. Reality is not 1:1
+    /// either: 10,000,000 stroops bought 5,996 dfTokens on testnet.
+    DepositRateBps,
     Shares(Address),
 }
 
@@ -80,6 +100,12 @@ impl MockVault {
     /// >10_000 = the position gained; <10_000 = it lost.
     pub fn set_rate_bps(env: Env, bps: i128) {
         env.storage().instance().set(&MockKey::RateBps, &bps);
+    }
+
+    /// T3: shares minted per unit deposited, in bps. <10_000 mints fewer
+    /// shares than XLM in (the real vault's behaviour).
+    pub fn set_deposit_rate_bps(env: Env, bps: i128) {
+        env.storage().instance().set(&MockKey::DepositRateBps, &bps);
     }
 
     pub fn deposit(
@@ -103,10 +129,18 @@ impl MockVault {
             .instance()
             .get(&MockKey::Shares(from.clone()))
             .unwrap_or(0);
+        // T3: mint at DepositRateBps (default 1:1) rather than unconditionally
+        // 1:1, so the contract's own share-price arithmetic is exercisable.
+        let deposit_rate: i128 = env
+            .storage()
+            .instance()
+            .get(&MockKey::DepositRateBps)
+            .unwrap_or(10_000);
+        let minted = amount * deposit_rate / 10_000;
         env.storage()
             .instance()
-            .set(&MockKey::Shares(from), &(cur + amount));
-        amount
+            .set(&MockKey::Shares(from), &(cur + minted));
+        minted
     }
 
     pub fn withdraw(
@@ -149,7 +183,7 @@ impl MockVault {
 
 /// Registers a mock vault, wires it into the pool, and opens deployment to
 /// `deploy_bps`. Returns (vault address, mock client).
-fn with_vault<'a>(env: &'a Env, s: &Setup<'a>, deploy_bps: i128) -> (Address, MockVaultClient<'a>) {
+pub(crate) fn with_vault<'a>(env: &'a Env, s: &Setup<'a>, deploy_bps: i128) -> (Address, MockVaultClient<'a>) {
     let vault_id = env.register(MockVault, ());
     let mock = MockVaultClient::new(env, &vault_id);
     mock.init(&s.token_id);
@@ -160,7 +194,7 @@ fn with_vault<'a>(env: &'a Env, s: &Setup<'a>, deploy_bps: i128) -> (Address, Mo
 
 /// The invariant every test asserts: the pool always controls at least what
 /// it owes stakers, counting deployed principal at original value.
-fn assert_invariant(s: &Setup<'_>) {
+pub(crate) fn assert_invariant(s: &Setup<'_>) {
     let liquid = s.client.get_liquid_balance();
     let deployed = s.client.get_total_deployed_xlm();
     let staked = s.client.get_total_staked();

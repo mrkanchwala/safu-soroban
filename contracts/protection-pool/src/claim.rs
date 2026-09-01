@@ -75,6 +75,34 @@ pub struct ClaimSubmitted {
     pub entitlement: i128,
 }
 
+/// T3 (2026-08-24): `submit_claim` could not admit the claim right now
+/// (`DailyStressCapExceeded`, `Insolvent`, or `OracleDailyClaimLimitReached`)
+/// so it was queued rather than rejected — `ClaimStatus::Reserved`, publicly
+/// readable via the existing `get_claim`, same as any other claim state.
+#[contractevent]
+pub struct ClaimQueued {
+    #[topic]
+    pub wallet: Address,
+    pub claim_id: BytesN<32>,
+    pub entitlement: i128,
+}
+
+/// T3: a queued claim's blocker cleared and it was admitted for real.
+#[contractevent]
+pub struct ClaimQueueReleased {
+    #[topic]
+    pub wallet: Address,
+    pub claim_id: BytesN<32>,
+}
+
+/// T3: a queued claim's window ran out before it ever cleared.
+#[contractevent]
+pub struct ClaimQueueExpired {
+    #[topic]
+    pub wallet: Address,
+    pub claim_id: BytesN<32>,
+}
+
 #[contractevent]
 pub struct ClaimUnlocked {
     #[topic]
@@ -117,11 +145,15 @@ pub struct ClaimCancelled {
     pub claim_id: BytesN<32>,
 }
 
+/// T3 fix (2026-08-24): `points_burned` added, mirroring `ClaimApproved`.
+/// The burn itself was always correct (`activate_claim` always ran) — only
+/// the event was silent about it.
 #[contractevent]
 pub struct OverrideExecuted {
     #[topic]
     pub wallet: Address,
     pub claim_id: BytesN<32>,
+    pub points_burned: i128,
 }
 
 #[contractevent]
@@ -394,6 +426,82 @@ fn activate_claim(env: &Env, stake_record: &mut StakeRecord, claim: &mut Claim) 
 }
 
 // -----------------------------------------------------------------------
+// admit_claim — shared by `submit_claim` (fresh admission) and
+// `try_release_queued_claim` (T3: release of a `Reserved` claim once its
+// blocker clears). Both paths must do EXACTLY the same admission
+// side-effects, so this is the one place that does them — extracted
+// 2026-08-24 specifically so the two callers cannot drift apart.
+//
+// Caller has ALREADY verified capacity/solvency/tier/window/dedup checks
+// pass; this function only performs the writes. Recomputes
+// day/day_entitlement/day_count fresh internally (not passed in) because a
+// release can land on a different ledger day than the original submission
+// attempt — reusing stale values would double-count against the wrong day
+// or (worse) the wrong one entirely.
+// -----------------------------------------------------------------------
+
+#[allow(clippy::too_many_arguments)]
+fn admit_claim(
+    env: &Env,
+    wallet: &Address,
+    tx_hash: &BytesN<32>,
+    claim_id: &BytesN<32>,
+    entitlement: i128,
+    tier: u32,
+    hack_timestamp: u64,
+    stake_record: &mut StakeRecord,
+    count_toward_oracle_limit: bool,
+) {
+    let day = current_day(env);
+    let (day_entitlement, day_count) = storage::get_daily_entitlement(env, day);
+    storage::set_daily_entitlement(
+        env,
+        day,
+        day_entitlement + entitlement,
+        day_count + if count_toward_oracle_limit { 1 } else { 0 },
+    );
+    storage::set_total_allocated(env, storage::get_total_allocated(env) + entitlement);
+
+    stake_record.active_claim_id = Some(claim_id.clone());
+    // Harmless no-op on the fresh-submission path (already None); clears
+    // the wallet's queue slot on the release path.
+    stake_record.reserved_claim_id = None;
+
+    let now_ledger = env.ledger().sequence();
+    let gate_met = now_ledger.saturating_sub(stake_record.staked_at_ledger) >= TIME_GATE_LEDGERS;
+
+    let mut claim = Claim {
+        wallet: wallet.clone(),
+        tx_hash: tx_hash.clone(),
+        hack_timestamp,
+        entitlement,
+        streamed: 0,
+        stake: stake_record.amount,
+        cooldown_ends_ledger: 0,
+        vesting_ends_ledger: 0,
+        total_staked_snapshot: 0,
+        tier,
+        status: ClaimStatus::PendingTime,
+        approve_deadline_ledger: 0,
+        last_collected_ledger: 0,
+    };
+
+    // CHANGED 2026-07-22: meeting the gate no longer auto-activates
+    // (forfeits/burns/starts cooldown) — it moves the claim to
+    // AwaitingApproval, where the staker has APPROVE_WINDOW_LEDGERS to
+    // actively call approve_claim themselves (Rule A).
+    if gate_met {
+        claim.status = ClaimStatus::AwaitingApproval;
+        claim.approve_deadline_ledger = now_ledger + APPROVE_WINDOW_LEDGERS;
+    }
+
+    storage::set_stake(env, wallet, stake_record);
+    storage::set_claim(env, claim_id, &claim);
+    storage::bump_instance_ttl(env);
+}
+
+
+// -----------------------------------------------------------------------
 // submit_claim
 // -----------------------------------------------------------------------
 
@@ -489,6 +597,15 @@ pub fn submit_claim(
     if stake_record.active_claim_id.is_some() {
         return Err(PoolError::ClaimAlreadyActiveForStake);
     }
+    // T3 (2026-08-24): a wallet can't submit a second, independent claim
+    // while one is sitting Reserved — same one-claim-per-wallet invariant
+    // active_claim_id already enforces for live claims. A resubmission of
+    // the SAME wallet+tx_hash instead hits ClaimAlreadyExists below, once
+    // claim_id is computed — this guard only stops a genuinely different
+    // claim from stacking on top of a queued one.
+    if stake_record.reserved_claim_id.is_some() {
+        return Err(PoolError::ClaimAlreadyQueued);
+    }
 
     let cap = tier_cap(stake_record.amount, tier)?;
     if entitlement > cap {
@@ -508,24 +625,25 @@ pub fn submit_claim(
 
     let total_staked = storage::get_total_staked(env);
     let total_allocated = storage::get_total_allocated(env);
-    if total_allocated + entitlement > total_staked {
-        return Err(PoolError::Insolvent);
-    }
+    let insolvent = total_allocated + entitlement > total_staked;
 
     let day = current_day(env);
     let (day_entitlement, day_count) = storage::get_daily_entitlement(env, day);
-    if day_entitlement + entitlement > stress_cap(env) {
-        return Err(PoolError::DailyStressCapExceeded);
-    }
+    let stress_capped = day_entitlement + entitlement > stress_cap(env);
 
     let is_oracle_caller = caller == &oracle;
-    if is_oracle_caller {
+
+    // Oracle's own daily submission-count throttle. Evaluated here rather
+    // than after the queue decision, because as of the 2026-08-24 scope
+    // widening it is one of the three conditions that QUEUE rather than
+    // reject (see the block comment below).
+    let oracle_rate_limited = if is_oracle_caller {
         let total_stakers = storage::get_total_stakers(env);
         let limit = (total_stakers / 10).max(1);
-        if day_count >= limit {
-            return Err(PoolError::OracleDailyClaimLimitReached);
-        }
-    }
+        day_count >= limit
+    } else {
+        false
+    };
 
     let claim_id = compute_claim_id(env, wallet, tx_hash);
     if let Some(existing) = storage::get_claim(env, &claim_id) {
@@ -534,47 +652,74 @@ pub fn submit_claim(
         }
     }
 
-    storage::set_daily_entitlement(
-        env,
-        day,
-        day_entitlement + entitlement,
-        day_count + if is_oracle_caller { 1 } else { 0 },
-    );
-    storage::set_total_allocated(env, total_allocated + entitlement);
+    // T3 (2026-08-24): queue instead of hard-reject. All three conditions
+    // below share one property — the claim is GENUINE and merely un-admittable
+    // right now for a reason outside the claimant's control. That is exactly
+    // what is re-triable, unlike a logic error (bad tier, expired window,
+    // hack predating the stake), which still hard-rejects above. The stored
+    // claim pins exactly what was submitted; nothing is re-derived on release
+    // (see `try_release_queued_claim`).
+    //
+    // `oracle_rate_limited` was ADDED to this set 2026-08-24, having first
+    // been deliberately excluded the same day. The exclusion reasoned that it
+    // is a flat anti-abuse counter rather than a capacity signal, which is
+    // true but turned out to be the wrong test. The right test is the
+    // founder's: a genuine hack that cannot be admitted because of system
+    // logic must not be silently lost. This limit is `total_stakers / 10`,
+    // so it bites hardest precisely during a mass incident (a bridge failure
+    // hitting many stakers at once) — the moment when losing genuine claims
+    // is least acceptable.
+    //
+    // Security note, stated rather than assumed: queuing does weaken this
+    // counter as a throttle, because a released claim deliberately does not
+    // count against it. What still bounds a compromised oracle is unchanged
+    // and stronger — the per-wallet `reserved_claim_id` guard caps it at one
+    // queued claim per wallet, `stress_cap` bounds total entitlement admitted
+    // per day at RELEASE time, the solvency invariant bounds it absolutely,
+    // and every submission still needs a valid oracle signature. The counter
+    // was always the soft outer layer, never the binding control.
+    if insolvent || stress_capped || oracle_rate_limited {
+        let claim = Claim {
+            wallet: wallet.clone(),
+            tx_hash: tx_hash.clone(),
+            hack_timestamp,
+            entitlement,
+            streamed: 0,
+            stake: stake_record.amount,
+            cooldown_ends_ledger: 0,
+            vesting_ends_ledger: 0,
+            total_staked_snapshot: 0,
+            tier,
+            status: ClaimStatus::Reserved,
+            approve_deadline_ledger: 0,
+            last_collected_ledger: 0,
+        };
+        stake_record.reserved_claim_id = Some(claim_id.clone());
+        storage::set_stake(env, wallet, &stake_record);
+        storage::set_claim(env, &claim_id, &claim);
+        storage::bump_instance_ttl(env);
 
-    stake_record.active_claim_id = Some(claim_id.clone());
+        ClaimQueued {
+            wallet: wallet.clone(),
+            claim_id: claim_id.clone(),
+            entitlement,
+        }
+        .publish(env);
 
-    let now_ledger = env.ledger().sequence();
-    let gate_met = now_ledger.saturating_sub(stake_record.staked_at_ledger) >= TIME_GATE_LEDGERS;
-
-    let mut claim = Claim {
-        wallet: wallet.clone(),
-        tx_hash: tx_hash.clone(),
-        hack_timestamp,
-        entitlement,
-        streamed: 0,
-        stake: stake_record.amount,
-        cooldown_ends_ledger: 0,
-        vesting_ends_ledger: 0,
-        total_staked_snapshot: 0,
-        tier,
-        status: ClaimStatus::PendingTime,
-        approve_deadline_ledger: 0,
-        last_collected_ledger: 0,
-    };
-
-    // CHANGED 2026-07-22: meeting the gate no longer auto-activates
-    // (forfeits/burns/starts cooldown) — it moves the claim to
-    // AwaitingApproval, where the staker has APPROVE_WINDOW_LEDGERS to
-    // actively call approve_claim themselves (Rule A).
-    if gate_met {
-        claim.status = ClaimStatus::AwaitingApproval;
-        claim.approve_deadline_ledger = now_ledger + APPROVE_WINDOW_LEDGERS;
+        return Ok(claim_id);
     }
 
-    storage::set_stake(env, wallet, &stake_record);
-    storage::set_claim(env, &claim_id, &claim);
-    storage::bump_instance_ttl(env);
+    admit_claim(
+        env,
+        wallet,
+        tx_hash,
+        &claim_id,
+        entitlement,
+        tier,
+        hack_timestamp,
+        &mut stake_record,
+        is_oracle_caller,
+    );
 
     ClaimSubmitted {
         wallet: wallet.clone(),
@@ -584,6 +729,111 @@ pub fn submit_claim(
     .publish(env);
 
     Ok(claim_id)
+}
+
+// -----------------------------------------------------------------------
+// try_release_queued_claim / expire_queued_claim — T3 (2026-08-24).
+// Permissionless, mirroring `expire_pending_approval`/`expire_stale_claim`'s
+// existing pattern: Soroban has no native scheduler, so an external caller
+// (staker, keeper, anyone) has to trigger these state transitions. Neither
+// is time-based-auto-execute — release only happens if a fresh re-check of
+// the SAME blockers against CURRENT state actually passes.
+// -----------------------------------------------------------------------
+
+pub fn try_release_queued_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    storage::require_not_paused(env)?;
+
+    let claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchQueuedClaim)?;
+    if claim.status != ClaimStatus::Reserved {
+        return Err(PoolError::NoSuchQueuedClaim);
+    }
+
+    let mut stake_record: StakeRecord =
+        storage::get_stake(env, &claim.wallet).ok_or(PoolError::NoStake)?;
+
+    // One-claim-per-wallet, re-asserted at RELEASE time — the same invariant
+    // `submit_claim` and `execute_override` enforce, and the reason this
+    // check cannot be skipped just because it passed at queue time: a
+    // `Reserved` claim deliberately does not set `active_claim_id`, so a
+    // 2-of-2 `execute_override` can create a DIFFERENT live claim for this
+    // wallet while this one sits queued. Releasing without re-checking would
+    // then produce two independently-payable claims against one stake —
+    // exactly what the 2026-07-22 "Bug 2 fix" closed for the override path.
+    // Found 2026-08-24 by the T3 audit pass, not by a test.
+    if let Some(active_id) = &stake_record.active_claim_id {
+        if active_id != claim_id {
+            return Err(PoolError::WalletHasDifferentActiveClaim);
+        }
+    }
+
+    let total_staked = storage::get_total_staked(env);
+    let total_allocated = storage::get_total_allocated(env);
+    if total_allocated + claim.entitlement > total_staked {
+        return Err(PoolError::QueueReleaseNotYetEligible);
+    }
+
+    let day = current_day(env);
+    let (day_entitlement, _) = storage::get_daily_entitlement(env, day);
+    if day_entitlement + claim.entitlement > stress_cap(env) {
+        return Err(PoolError::QueueReleaseNotYetEligible);
+    }
+
+    admit_claim(
+        env,
+        &claim.wallet,
+        &claim.tx_hash,
+        claim_id,
+        claim.entitlement,
+        claim.tier,
+        claim.hack_timestamp,
+        &mut stake_record,
+        // Never counts toward the oracle's own daily submission-count
+        // limit — this call can come from anyone, not necessarily the
+        // oracle re-submitting, and the original submission already
+        // skipped that check entirely by queuing instead of hard-failing.
+        false,
+    );
+
+    ClaimQueueReleased {
+        wallet: claim.wallet.clone(),
+        claim_id: claim_id.clone(),
+    }
+    .publish(env);
+    Ok(())
+}
+
+/// A queued claim whose window ran out before capacity ever freed. Releases
+/// the wallet's reservation slot so a fresh incident can be submitted. No
+/// funds/allocation to release — a Reserved claim never touched
+/// `total_allocated` in the first place.
+pub fn expire_queued_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    storage::require_not_paused(env)?;
+
+    let mut claim: Claim = storage::get_claim(env, claim_id).ok_or(PoolError::NoSuchQueuedClaim)?;
+    if claim.status != ClaimStatus::Reserved {
+        return Err(PoolError::NoSuchQueuedClaim);
+    }
+
+    let now_ts = env.ledger().timestamp();
+    if now_ts <= claim.hack_timestamp + CLAIM_WINDOW_SECONDS {
+        return Err(PoolError::QueueNotYetExpired);
+    }
+
+    let mut stake_record: StakeRecord =
+        storage::get_stake(env, &claim.wallet).ok_or(PoolError::NoStake)?;
+    stake_record.reserved_claim_id = None;
+    storage::set_stake(env, &claim.wallet, &stake_record);
+
+    claim.status = ClaimStatus::Expired;
+    storage::set_claim(env, claim_id, &claim);
+    storage::bump_instance_ttl(env);
+
+    ClaimQueueExpired {
+        wallet: claim.wallet.clone(),
+        claim_id: claim_id.clone(),
+    }
+    .publish(env);
+    Ok(())
 }
 
 // -----------------------------------------------------------------------
@@ -1134,16 +1384,34 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) -> 
     // consensus IS the security gate, no separate staker approval is
     // required. Activation (including the points burn) happens directly
     // here, same as it always has for a fresh forfeiture.
-    if !stake_record.withdrawn {
-        activate_claim(env, &mut stake_record, &mut claim);
+    // T3 fix (2026-08-24): capture the burn, same as `approve_claim` does
+    // for `ClaimApproved` (`claim.rs:659,668`) — `activate_claim` already
+    // computes and burns points here, this just stops discarding the
+    // return value. The re-execution branch burns nothing NEW (points
+    // were already burned on the original execution that set
+    // `withdrawn = true`), so it reports 0, not a phantom second burn.
+    let points_burned = if !stake_record.withdrawn {
+        activate_claim(env, &mut stake_record, &mut claim)
     } else {
         let now_ledger = env.ledger().sequence();
         claim.cooldown_ends_ledger = now_ledger + COOLDOWN_LEDGERS;
         claim.vesting_ends_ledger = claim.cooldown_ends_ledger + VESTING_LEDGERS;
         claim.total_staked_snapshot = storage::get_total_staked(env);
         claim.last_collected_ledger = claim.cooldown_ends_ledger;
-    }
+        0
+    };
     stake_record.active_claim_id = Some(claim_id.clone());
+    // T3 (2026-08-24): if this override is taking over the wallet's OWN
+    // queued claim, release the queue slot with it. Without this the record
+    // becomes Active while `reserved_claim_id` still points at it, and
+    // `expire_queued_claim` can never clear that pointer (it requires status
+    // == Reserved), permanently blocking the wallet from queuing again.
+    // A queued claim under a DIFFERENT id is deliberately left alone here —
+    // it stays independently expirable, and `try_release_queued_claim`'s
+    // active-claim guard stops it ever becoming a second live claim.
+    if stake_record.reserved_claim_id.as_ref() == Some(claim_id) {
+        stake_record.reserved_claim_id = None;
+    }
 
     storage::set_stake(env, &req.wallet, &stake_record);
     storage::set_claim(env, claim_id, &claim);
@@ -1152,6 +1420,7 @@ fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) -> 
     OverrideExecuted {
         wallet: req.wallet.clone(),
         claim_id: claim_id.clone(),
+        points_burned,
     }
     .publish(env);
     Ok(())
