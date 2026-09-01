@@ -2,15 +2,19 @@
 
 [![CI](https://github.com/mrkanchwala/safu-soroban/actions/workflows/ci.yml/badge.svg)](https://github.com/mrkanchwala/safu-soroban/actions/workflows/ci.yml)
 
-Soroban (Stellar smart contracts, Rust → WASM) port of `SAFUPoolV8.sol`, the
-live Ethereum mainnet contract at
-[`0xa170f0937DEc353C1806eaC0c3d559524d458641`](https://etherscan.io/address/0xa170f0937DEc353C1806eaC0c3d559524d458641).
-Built for SCF #44. Tranche 1 delivered the core
-pool/points/tier/claim/payout-stream mechanics, ported wholesale from V8.
-**Tranche 2 is merged and live on testnet**, adding on-chain Ed25519 oracle
-verification and the yield layer: idle pool capital is deployed into Blend
-via a DeFindex vault (V8's equivalent is Lido wstETH), wired to the live
-contract through `set_vault`.
+`ProtectionPool` is a Soroban (Stellar smart contracts, Rust → WASM) loss-
+socialization pool, built for SCF #44 and delivered in three tranches:
+
+- **Tranche 1** — the core mechanics: pool accounting, points, tiers, claims
+  and the payout stream. Deployed to testnet, approved 2026-08-08.
+- **Tranche 2** — on-chain Ed25519 oracle verification, plus the yield layer:
+  idle pool capital is deployed into Blend through a DeFindex vault, wired to
+  the live contract via `set_vault`. Merged and live on testnet; approved
+  2026-08-26.
+- **Tranche 3** — mainnet. Closes the three operational gaps Tranches 1 and 2
+  deliberately left open: an on-chain admission retry queue, permissionless
+  bidirectional liquidity rebalancing, and an atomic pool+vault deploy. Code
+  merged 2026-09-01; mainnet deploy follows the SCF-funded audit.
 
 **Scope note:** this repo is the on-chain `ProtectionPool` contract only.
 SAFU's fraud-detection scanner, the system that decides whether a given
@@ -18,12 +22,18 @@ transaction qualifies as a wallet drain, is a separate, proprietary asset.
 Its code, logic, and signal weights are not included, referenced, or
 reproduced anywhere in this repository.
 
-**Status:** Tranche 2 code merged, tested and live on Stellar testnet.
-250 unit tests pass. Mutation testing has been run against the Tranche 2
-diff: 400 mutants, 389 caught, 10 unviable, 1 documented survivor.
-Coverage 98.40% line / 98.11% region / 97.28% function. Both re-measured
-2026-08-25 against the current tree; see `TESTING.md` for the methodology
-and for the survivor. Compiles to WASM via
+**Status:** Tranche 3 code merged 2026-09-01; Tranche 2 is the code currently
+live on Stellar testnet. **278 unit tests pass on the merged tree.**
+
+Mutation and coverage figures below were measured on the **Tranche 2** tree and
+have not yet been re-run against the merged Tranche 3 code — that regression run
+is a stated prerequisite of the mainnet deploy, not an omission. Tranche 2 diff:
+400 mutants, 389 caught, 10 unviable, 1 documented survivor; the separate
+Tranche 3 diff campaign was 141 mutants with 140 of 140 viable killed and zero
+contract defects. Coverage 98.40% line / 98.11% region / 97.28% function, both
+measured 2026-08-25. See `TESTING.md` for the methodology and for the survivor.
+
+Compiles to WASM via
 `stellar contract build --optimize`, `/audit-chain` +
 `/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM — see §7 of
 `TESTING.md`),
@@ -214,9 +224,8 @@ working oracle Address with no attestation key. Rotate with
 identities disagree and every oracle-path claim fails closed (see `admin.rs`).
 
 `pool_cap` is a plain argument, never hardcoded into contract logic, and
-stays admin-adjustable afterward via `set_pool_cap` (mirrors V8's mutable
-`maxPoolSize`). The intended Tranche 1 deploy value: **600,000 XLM**
-(approximating V8's 60 ETH cap) = `6_000_000_000_000` stroops
+stays admin-adjustable afterward via `set_pool_cap`. The intended Tranche 1
+deploy value: **600,000 XLM** = `6_000_000_000_000` stroops
 (1 XLM = 10,000,000 stroops).
 
 ## Error handling
@@ -256,9 +265,8 @@ contract's placement, and why:
 | `persistent()` | Per-staker (`Stake(Address)`), per-claim (`ClaimRec(BytesN<32>)`), per-override-request (`Override(BytesN<32>)`), banked points (`PointsBalance(Address)`) | Distributed across separate keys, not grown as one struct. Bounded per-entity storage, archived and restorable via TTL bumps. |
 | `temporary()` | Not currently used | Reserved for anything that's naturally allowed to expire and isn't load-bearing for solvency (e.g. a future price cache). |
 
-**On struct field sizing:** reviewed 2026-07-14. Solidity-style slot
-packing (reordering fields to share a 32-byte EVM word) has no real
-equivalent here. Soroban's storage cost is driven by read/write *count*,
+**On struct field sizing:** reviewed 2026-07-14. Sub-word bit-packing has no
+real equivalent here. Soroban's storage cost is driven by read/write *count*,
 TTL-extension frequency, and total serialized entry size, not sub-word
 bit-packing, and every field in `StakeRecord`/`Claim`/`OverrideRequest`
 is already at its minimum meaningful width: `i128` for token amounts
@@ -294,7 +302,7 @@ pub enum DataKey {
 }
 ```
 
-## Mechanics: what's ported from V8, deliberately
+## Mechanics
 
 - **Tier assessed off-chain by the oracle at claim time** (not stake-amount
   banded), coverage cap = `stake × tier_ratio × TIER_COVERAGE_BPS / 10_000`,
@@ -313,34 +321,32 @@ pub enum DataKey {
   claim.
 - **`StakeRecord.amount` is never zeroed by claim-triggered forfeiture**:
   only `withdrawn = true` is set. Only the *voluntary* `withdraw()` path
-  zeroes `amount`. (Verified against the live V8 source directly; an
-  earlier draft of this port got this backwards, which cascaded into two
-  further bugs before being caught and fixed; see git history.)
+  zeroes `amount`. (An earlier draft had this backwards, which cascaded into
+  two further bugs before being caught and fixed; see git history.)
 
-## Deliberate deviations from V8 (architecture, not gaps)
+## Design choices
 
 - **Auth:** Soroban's native `require_auth()` on the exact function+argument
-  tuple, instead of V8's manual ECDSA-signature-verification-in-contract
-  code. The oracle's authorization *is* the call itself; there's no
+  tuple. The oracle's authorization *is* the call itself, so there is no
   separate signed byte-blob to design or verify.
-- **Beneficiary hash:** `sha256`, not `keccak256`. Soroban-native, no
-  cross-chain hash-matching requirement exists for this field.
-- **Stake bounds:** dynamic basis-points of the (admin-adjustable) pool cap,
-  not V8's fixed ETH amounts. Reproduces V8's real 1.25%-of-pool ratio
-  exactly, portable across future chain deploys with different pool sizes.
-- **No yield layer, no failed-payout-rescue bucket, no `revokedApprovals`
-  list**. Tranche 1 scope excludes yield entirely (native XLM has no
-  Lido-wstETH-style wrap/unwrap and no trustline-failure mode the way
-  arbitrary EVM sends do; Soroban's native auth already handles
-  replay/nonces without a custom revocation list).
+- **Beneficiary hash:** `sha256`. Soroban-native, and no cross-chain
+  hash-matching requirement exists for this field.
+- **Stake bounds:** dynamic basis-points of the (admin-adjustable) pool cap
+  rather than fixed amounts — a constant 1.25%-of-pool ratio, portable across
+  future chain deploys with different pool sizes.
+- **No failed-payout-rescue bucket and no `revokedApprovals` list.** Native
+  XLM has no wrap/unwrap step and no trustline-failure mode on the payout
+  path, and Soroban's native auth already handles replay and nonces without a
+  custom revocation list. (Yield was out of Tranche 1 scope and arrived in
+  Tranche 2.)
 
 ## Known open items before mainnet
 
 - **Outflow cap deviates from the SCF #44 submitted grant text**, which
   commits Tranche 1 to a flat "2%/day" payout cap. What's built here is
-  V8's real dynamic 5%/3%/1% cap, a deliberate choice ("copy V8 wholesale"
-  read as meaning the actual mechanic, not the grant text's simplified
-  description). This section is the disclosure: SCF reviewed the Tranche 1
+  a dynamic 5%/3%/1% cap — a deliberate choice to build the real mechanic
+  rather than the grant text's simplified description. This section is the
+  disclosure: SCF reviewed the Tranche 1
   deliverables against this repository, returned no comments, and approved
   the tranche on 2026-08-08.
 - **Two static-analysis tools that would normally apply here do not.**
@@ -356,8 +362,8 @@ pub enum DataKey {
     row **beside `build failed`**. That row is vacuous, no detector ran, and
     it must not be read as a pass.
 
-  What assurance does rest on: **250 unit tests** (all passing as of
-  2026-08-25), **151,398 fuzzed action-sequences against this exact
+  What assurance does rest on: **278 unit tests** (all passing as of
+  2026-09-01), **151,398 fuzzed action-sequences against this exact
   Tranche 2 code** (2026-08-17, both targets, zero crashes and zero
   solvency-invariant violations, see "Fuzzing" above), the coverage and
   mutation results recorded in `TESTING.md` (98.40% line coverage;
@@ -391,13 +397,16 @@ pub enum DataKey {
     their entire lifetime points balance. Slow, observable and bounded,
     materially better than a direct vault drain, but it is the real
     exposure and it is architectural, not incidental.
-- **`cancel_pending_override`'s mechanics were re-verified against V8
-  directly** (was previously an unconfirmed guess), see `src/claim.rs`
-  module doc comment for the full account of what was wrong and what was
-  fixed.
-- **A `submit_claim` rejected for capacity (`DailyStressCapExceeded` /
-  `OracleDailyClaimLimitReached`) writes no state and has no automatic
-  retry today**. The underlying incident stays genuine and re-submittable
+- **`cancel_pending_override`'s mechanics were re-verified from first
+  principles** (they were previously an unconfirmed guess) — see the
+  `src/claim.rs` module doc comment for the full account of what was wrong
+  and what was fixed.
+- **✅ CLOSED IN TRANCHE 3 (`006daf3`, merged `1d9469f`) — on-chain admission
+  retry queue.** Kept here as the disclosure trail; the description below is
+  what Tranches 1–2 shipped and what T3 replaced it with.
+  **Was:** a `submit_claim` rejected for capacity (`DailyStressCapExceeded` /
+  `OracleDailyClaimLimitReached`) wrote no state and had no automatic
+  retry. The underlying incident stays genuine and re-submittable
   once capacity frees up, but nothing currently tracks or re-attempts it
   automatically. Planned for mainnet: **on-chain** queue state (not
   off-chain) that pins the score/tier/entitlement at the moment of
@@ -406,16 +415,23 @@ pub enum DataKey {
   field already is, with a permissionless function anyone can call to
   re-admit it once capacity frees up, or expire it if the claim window
   runs out first.
-- **Liquidity rebalancing deliberately ships simple for testnet.**
-  `claim_stream` payouts today rely on a manual admin `provide_liquidity`
+- **✅ CLOSED IN TRANCHE 3 (`006daf3`) — permissionless bidirectional
+  rebalancing via `ensure_liquidity`/`auto_deploy_liquidity`, with a
+  contract-computed 5% slippage bound (`MAX_REBALANCE_SLIPPAGE_BPS`) and
+  nothing caller-controlled.**
+  **Was:** liquidity rebalancing shipped simple for testnet.
+  `claim_stream` payouts relied on a manual admin `provide_liquidity`
   call if too much of the pool is deployed into the D2 yield vault when a
   payout is due. Testnet validates the core deposit→vault→yield mechanism
   first, on the simpler path. Held off for mainnet: a permissionless
   `ensure_liquidity()` redesign where the contract computes its own
   shortfall and slippage bound (nothing caller-controlled), so rebalancing
   doesn't require an admin to notice and act by hand.
-- **Vault deployment deliberately stays a manual operator step for
-  testnet.** Today: deploy a DeFindex vault via its factory, then
+- **✅ CLOSED IN TRANCHE 3 (`006daf3`) — `scripts/atomic_pool_vault_deploy.sh`
+  bundles pool deploy → vault deploy → `set_vault` into one operator-triggered
+  step.** Deliberately still a script, not the pool's constructor, for the
+  coupling reason given below.
+  **Was:** a manual operator step. Deploy a DeFindex vault via its factory, then
   `set_vault`, run as a separate step right after pool deployment so each
   piece is independently verifiable. Held off for mainnet: bundle pool
   deploy → vault deploy → `set_vault` into one atomic, operator-triggered
@@ -498,7 +514,7 @@ all-rights-reserved despite being public.
 
 ## Full technical reference
 
-The complete V8→Soroban mechanics map, SDK reference, vulnerability
-checklist, and audit history for this contract live in the SAFU team's
+The complete mechanics map, SDK reference, vulnerability checklist, and
+audit history for this contract live in the SAFU team's
 internal ops repo: `context/knowledge/smartcontract-soroban.md`. This
 README is the standalone summary for anyone reading this repo on its own.
