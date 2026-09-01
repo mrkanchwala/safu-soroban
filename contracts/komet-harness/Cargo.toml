@@ -1,0 +1,26 @@
+[package]
+name = "komet-harness"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+# EXCLUDED from the workspace on purpose (see the root Cargo.toml). It is a
+# verification harness, not a shipped contract, and must never be built as
+# part of a release. Komet compiles it directly via kasmer.json.
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = "27.0.0"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

@@ -1,5 +1,6 @@
 {
-  "contracts": [
-    "../protection-pool"
-  ]
+    "contracts": [
+        "../komet-harness",
+        "../komet-mock-token"
+    ]
 }

@@ -105,22 +105,51 @@ jobs:
           echo "== prove --help ==" | tee -a cli.log
           komet prove --help 2>&1 | tee -a cli.log
 
+      # The test contract `contractimport!`s both harness Wasms, so they must
+      # exist before it compiles. Komet also compiles them itself from
+      # kasmer.json; building here first is what makes the import resolve.
+      - name: Build harness contracts
+        run: |
+          set -o pipefail
+          rustup target add wasm32v1-none
+          cargo build --manifest-path contracts/komet-harness/Cargo.toml \
+            --release --target wasm32v1-none 2>&1 | tail -3
+          cargo build --manifest-path contracts/komet-mock-token/Cargo.toml \
+            --release --target wasm32v1-none 2>&1 | tail -3
+          ls -la contracts/komet-harness/target/wasm32v1-none/release/*.wasm
+          ls -la contracts/komet-mock-token/target/wasm32v1-none/release/*.wasm
+
+      # Guard: the harness must never change the artifact that ships. The
+      # feature-flag approach was rejected precisely because it did.
+      - name: Assert production Wasm is untouched
+        run: |
+          set -o pipefail
+          cargo install --locked stellar-cli --version 23.1.4 2>&1 | tail -2 || true
+          stellar contract build --optimize 2>&1 | tail -3
+          H=$(sha256sum target/wasm32v1-none/release/protection_pool.wasm | cut -d' ' -f1)
+          echo "production wasm: $H"
+          if [ "$H" != "2cec7e749d46b96a392be85dd284b8a988261ab7716b2218c7a5f39bbe2162db" ]; then
+            echo "::error::Production Wasm hash changed — the harness must never affect it."
+            exit 1
+          fi
+          echo "unchanged ✓"
+
+      # `-C <dir>` is the documented form; a bare `komet test` is not.
       - name: Run Komet property tests (fuzzing)
         id: test
         continue-on-error: true
-        working-directory: contracts/test-protection-pool
         run: |
           set +e
-          komet test 2>&1 | tee ../../komet-test.log
+          komet test -C contracts/test-protection-pool 2>&1 | tee komet-test.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
+      # The prove subcommand takes `run`; `komet prove` alone is not valid.
       - name: Run Komet proofs (symbolic execution)
         id: prove
         continue-on-error: true
-        working-directory: contracts/test-protection-pool
         run: |
           set +e
-          komet prove 2>&1 | tee ../../komet-prove.log
+          komet prove run -C contracts/test-protection-pool 2>&1 | tee komet-prove.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Summarise

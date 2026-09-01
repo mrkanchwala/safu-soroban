@@ -1,3 +1,8 @@
 /target
 .DS_Store
 test_snapshots/
+
+# Nested crate build output. `/target` above is root-anchored only, so the
+# harness crates under contracts/ were not covered - 3,816 build artifacts
+# reached a commit before this was caught (push rejected, HTTP 400).
+**/target/

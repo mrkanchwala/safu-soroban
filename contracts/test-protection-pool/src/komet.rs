@@ -44,3 +44,37 @@ pub fn create_contract(env: &Env, addr: Bytes, hash: Bytes) -> Address {
         .with_current_contract(addr)
         .deploy_v2(hash, ())
 }
+
+// ---------------------------------------------------------------------------
+// `kasmer_address_from_bytes` — the second Komet cheat function this harness
+// needs, added 2026-09-01. It is how you construct an Address inside a
+// `no_std` contract; there is no SDK route. `is_contract` selects between a
+// contract address (1) and an account address (0).
+//
+// Same shape as `create_contract` above: the host function under Komet, the
+// ordinary SDK path under `cargo test`.
+// ---------------------------------------------------------------------------
+
+#[cfg(not(test))]
+#[link(wasm_import_module = "env")]
+extern "C" {
+    fn kasmer_address_from_bytes(addr_val: u64, is_contract: u64) -> u64;
+}
+
+#[cfg(not(test))]
+pub fn address_from_bytes(env: &Env, addr: Bytes, is_contract: bool) -> Address {
+    unsafe {
+        let res = kasmer_address_from_bytes(
+            addr.as_val().get_payload(),
+            if is_contract { 1u64 } else { 0u64 },
+        );
+        Address::from_val(env, &Val::from_payload(res))
+    }
+}
+
+#[cfg(test)]
+pub fn address_from_bytes(env: &Env, addr: Bytes, _is_contract: bool) -> Address {
+    use soroban_sdk::BytesN;
+    let addr: BytesN<32> = addr.try_into().unwrap();
+    Address::from_val(env, &addr.to_val())
+}
