@@ -5,18 +5,68 @@
 # based `kup` package manager + the full K-framework/KWasm toolchain — real,
 # unaudited third-party install surface, isolated here on request.
 #
+# x86_64 ONLY. The K toolchain ships x86_64, so on an arm64 laptop this needs
+# emulation. Build and run it on the VPS (native x86_64), not the MacBook.
+#
 # Build:  docker build -f Dockerfile.komet -t safu-komet .
 # Run:    docker run --rm -it safu-komet bash
+#
+# ---------------------------------------------------------------------------
+# CORRECTIONS 2026-09-01 — this file had three faults. None had ever been
+# exercised, because it had never been run end to end.
+#
+#  1. NO RUST. `stellar contract build` compiles a Rust contract to Wasm, so it
+#     needs cargo and the wasm32v1-none target. Neither was installed. CI never
+#     hit this because GitHub runners ship Rust preinstalled.
+#  2. NO STELLAR CLI. Komet shells out to `stellar contract build` for every
+#     contract named in kasmer.json (komet/kasmer.py:156 -> _stellar_bin).
+#     Without it `komet test` dies in under a second with
+#       RuntimeError: Couldn't find 'stellar' executable.
+#     — exactly how CI run 33481585123 verified nothing while reporting success.
+#  3. STALE PATH. `~/.kup/bin` is not where kup lands. The K installer installs
+#     Nix, then installs kup INTO THE NIX PROFILE. This is the same bug the
+#     workflow corrected after probe run 33475575437; it survived here because
+#     nothing ever ran this file.
+# ---------------------------------------------------------------------------
 
 FROM ubuntu:24.04
 
+# libdbus-1-3 and libudev1 are RUNTIME deps of the prebuilt stellar binary
+# (hardware-wallet support links against both). Without libdbus the binary
+# installs fine and then dies on first invocation with
+#   stellar: error while loading shared libraries: libdbus-1.so.3
+# A GitHub runner already has these, so CI never reveals it — only a clean
+# container does. Found by this build on 2026-09-01.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates bash git build-essential \
+    curl ca-certificates bash git xz-utils build-essential pkg-config \
+    libdbus-1-3 libudev1 sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# The K-framework installer explicitly refuses to run as root (its own
-# safety check, not a bug here) — needs a real non-root user.
-RUN useradd -m -s /bin/bash komet
+# Stellar CLI. The asset name is resolved from the release API rather than
+# hardcoded, so an upstream rename fails loudly HERE at build time instead of
+# silently at test time.
+RUN set -eux; \
+    URL="$(curl -fsSL https://api.github.com/repos/stellar/stellar-cli/releases/latest \
+           | grep -oE '"browser_download_url": *"[^"]*x86_64-unknown-linux-gnu[^"]*\.tar\.gz"' \
+           | head -1 | cut -d'"' -f4)"; \
+    echo "stellar asset: $URL"; \
+    curl -fsSL "$URL" -o /tmp/stellar.tar.gz; \
+    tar -xzf /tmp/stellar.tar.gz -C /tmp; \
+    install -m 0755 "$(find /tmp -maxdepth 3 -type f -name stellar | head -1)" \
+            /usr/local/bin/stellar; \
+    rm -f /tmp/stellar.tar.gz; \
+    stellar --version
+
+# The K-framework installer explicitly refuses to run as root (its own safety
+# check, not a bug here) — needs a real non-root user. But the Determinate Nix
+# installer it invokes then escalates BACK to root via `sudo`, so the user needs
+# passwordless sudo or the install dies with:
+#   Executing `nix-installer` as `root` via `sudo` / ENOENT
+# A GitHub runner's user already has this, which is why CI installs fine and a
+# clean container does not.
+RUN useradd -m -s /bin/bash komet \
+    && echo 'komet ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/komet \
+    && chmod 0440 /etc/sudoers.d/komet
 WORKDIR /work
 COPY . /work
 RUN chown -R komet:komet /work
@@ -25,11 +75,45 @@ WORKDIR /home/komet
 
 SHELL ["/bin/bash", "-c"]
 
+# Rust, for `stellar contract build`. Pinned to match rust-toolchain.toml so the
+# container compiles the contracts with the same toolchain CI does.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain 1.96.0 --target wasm32v1-none
+ENV PATH="/home/komet/.cargo/bin:${PATH}"
+
+# There is no systemd in a container, so the Determinate installer must be told
+# not to install a service unit. Without this it tries to start nix-daemon via
+# systemd and fails. A GitHub runner has systemd, so again CI never sees it.
+ENV NIX_INSTALLER_INIT=none \
+    NIX_INSTALLER_NO_CONFIRM=1
+
 # The installer has a hidden `read -p "...install nix? [y/N]"` prompt not
 # gated by any flag (checked its actual source — --yes is never referenced).
 # Piping "y" answers it non-interactively.
 RUN echo "y" | bash <(curl -fsSL https://kframework.org/install)
-ENV PATH="/home/komet/.kup/bin:${PATH}"
-RUN kup install komet
 
+# kup installs into the NIX PROFILE, not ~/.kup/bin. See correction 3 above.
+ENV PATH="/home/komet/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH}"
+
+# With `init=none` nothing starts nix-daemon for us, and kup needs the store
+# daemon socket. Start it in the same layer, then install Komet.
+RUN set -eux; \
+    if [ ! -S /nix/var/nix/daemon-socket/socket ]; then \
+      sudo sh -c 'nohup /nix/var/nix/profiles/default/bin/nix-daemon > /tmp/nix-daemon.log 2>&1 &'; \
+      for i in $(seq 1 30); do \
+        [ -S /nix/var/nix/daemon-socket/socket ] && break; sleep 1; \
+      done; \
+    fi; \
+    kup install komet
+
+# Fail the BUILD if the toolchain is incomplete, rather than discovering it
+# mid-test-run and reporting "nothing verified". Every binary Komet needs is
+# checked here, by running it.
+RUN set -eux; \
+    command -v stellar; stellar --version; \
+    command -v cargo;   cargo --version; \
+    rustup target list --installed | grep -qx wasm32v1-none; \
+    command -v komet;   komet --help > /dev/null
+
+WORKDIR /work
 CMD ["bash"]

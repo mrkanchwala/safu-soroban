@@ -105,6 +105,41 @@ jobs:
           echo "== prove --help ==" | tee -a cli.log
           komet prove --help 2>&1 | tee -a cli.log
 
+      # ONE-TIME DEPENDENCY TRACE — eng review 2026-09-01, priority action 1.
+      #
+      # Every failure in this workflow after the first was a missing external
+      # binary found at RUNTIME, one run at a time: `stellar` (run 33481585123,
+      # which then reported success while verifying nothing). Komet is readable
+      # Python in the Nix store, so what it shells out to can simply be read.
+      # Declaring the toolchain beats discovering it.
+      #
+      # Never allowed to fail the job -- it is diagnostics, not a gate.
+      - name: Trace Komet's external dependencies
+        continue-on-error: true
+        run: |
+          KOMET_BIN="$(command -v komet || true)"
+          echo "komet: ${KOMET_BIN} -> $(readlink -f "${KOMET_BIN}" 2>/dev/null)"
+
+          # Version, for citation. `komet` has no --version, so take it from the
+          # Nix store path, which carries it.
+          readlink -f "${KOMET_BIN}" 2>/dev/null \
+            | grep -oE 'komet-[0-9]+\.[0-9]+\.[0-9]+' | head -1 > komet-version.txt || true
+          echo "resolved version: $(cat komet-version.txt 2>/dev/null || echo unknown)"
+
+          SRC="$(find /nix/store -maxdepth 6 -type d -path '*site-packages/komet' 2>/dev/null | head -1)"
+          echo "sources: ${SRC:-<not found>}"
+          if [ -n "$SRC" ]; then
+            {
+              echo "# binaries resolved via _which()"
+              grep -rhoE "_which\('[^']+'\)" "$SRC" 2>/dev/null | sort -u
+              echo "# subprocess invocations"
+              grep -rhoE "run_process\(\[[^]]{0,120}" "$SRC" 2>/dev/null | sort -u
+            } > komet-deps.txt
+          else
+            echo "(komet sources not located -- diagnostics only)" > komet-deps.txt
+          fi
+          cat komet-deps.txt
+
       # The test contract `contractimport!`s both harness Wasms, so they must
       # exist before it compiles. Komet also compiles them itself from
       # kasmer.json; building here first is what makes the import resolve.
@@ -155,6 +190,56 @@ jobs:
             || { echo "::error::Harness crates are no longer excluded from the workspace."; exit 1; }
           echo "untouched ✓"
 
+      # Komet shells out to `stellar contract build` to compile the contracts
+      # named in kasmer.json (komet/kasmer.py:156 -> _stellar_bin -> _which).
+      # Without that binary `komet test` dies in under a second with
+      #   RuntimeError: Couldn't find 'stellar' executable.
+      # which is exactly what run 33481585123 did while reporting success.
+      #
+      # The earlier guard step happened to install stellar-cli as a side effect
+      # of its hash rebuild, so removing that guard removed Komet's dependency
+      # too. It is now installed explicitly, as its own step, because Komet
+      # needs it -- not as a by-product of something else.
+      #
+      # Prebuilt binary first (seconds); build from crates.io only as a
+      # fallback (minutes). The asset name is resolved from the release API
+      # rather than hardcoded, so an upstream rename degrades to the fallback
+      # instead of breaking the run. Whatever path is taken, the step FAILS if
+      # `stellar` is not runnable afterwards. No `|| true` here, ever -- that is
+      # what turned the original CLI failure into a confusing exit 127.
+      - name: Install Stellar CLI (Komet shells out to it)
+        run: |
+          set -o pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libudev-dev libdbus-1-dev pkg-config
+
+          URL=$(curl -fsSL https://api.github.com/repos/stellar/stellar-cli/releases/latest \
+                | grep -oE '"browser_download_url": *"[^"]*x86_64-unknown-linux-gnu[^"]*\.tar\.gz"' \
+                | head -1 | cut -d'"' -f4) || URL=""
+
+          if [ -n "$URL" ]; then
+            echo "prebuilt asset: $URL"
+            curl -fsSL "$URL" -o /tmp/stellar.tar.gz
+            tar -xzf /tmp/stellar.tar.gz -C /tmp
+            BIN=$(find /tmp -maxdepth 3 -type f -name stellar | head -1)
+            if [ -n "$BIN" ]; then
+              sudo install -m 0755 "$BIN" /usr/local/bin/stellar
+            fi
+          fi
+
+          if ! command -v stellar >/dev/null 2>&1; then
+            echo "no usable prebuilt binary; building stellar-cli from crates.io"
+            # 28.0.0 declares rust-version 1.93.0; rust-toolchain.toml pins
+            # 1.96.0, so this compiles. The old 23.1.4 pin did not.
+            cargo install --locked stellar-cli --version 28.0.0
+          fi
+
+          if ! command -v stellar >/dev/null 2>&1; then
+            echo "::error::stellar CLI is not installed -- Komet cannot build the harness contracts."
+            exit 1
+          fi
+          stellar --version
+
       # `-C <dir>` is the documented form; a bare `komet test` is not.
       - name: Run Komet property tests (fuzzing)
         id: test
@@ -178,6 +263,9 @@ jobs:
         run: |
           {
             echo "## Komet"
+            echo ""
+            echo "Tool version: \`$(cat komet-version.txt 2>/dev/null || echo unknown)\`"
+            echo "Commit: \`${GITHUB_SHA}\`"
             echo ""
             echo "| Stage | Exit |"
             echo "|---|---|"
@@ -207,34 +295,68 @@ jobs:
           path: |
             install.log
             cli.log
+            komet-version.txt
+            komet-deps.txt
             komet-test.log
             komet-prove.log
           if-no-files-found: warn
 
+      # REWRITTEN after run 33481585123, which went GREEN while both Komet
+      # invocations crashed in under a second. The previous version decided the
+      # verdict by grepping the logs, and a Python traceback ending in
+      # `RuntimeError: Couldn't find 'stellar' executable.` matched none of its
+      # patterns -- so the job printed "properties checked -- results above are
+      # real" over an empty result. That is the precise failure this workflow's
+      # header says must never happen, reintroduced by the grep that was meant
+      # to prevent a different false result.
+      #
+      # The exit code is now the authority. It cannot be evaded by wording, and
+      # it does not need to anticipate what the next unknown blocker prints.
+      # The log grep is kept only as a secondary check, for the case of a zero
+      # exit with a hard error in the output.
+      #
+      # NOTE: a genuine property VIOLATION also lands here as a non-zero exit
+      # and is reported as "no clean result". That is deliberate -- read the log
+      # to tell a tool failure from a real finding. Both must stop the job; only
+      # one of them is good news.
       - name: Verdict — did Komet actually verify anything?
         if: always()
         run: |
-          if [ ! -s komet-test.log ] && [ ! -s komet-prove.log ]; then
-            echo "### Verdict: NOTHING VERIFIED" >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Komet produced no output — nothing was verified."
-            exit 1
-          fi
-          # Anchored on purpose. The previous pattern matched a bare "error"
-          # anywhere in the log, and Komet's own reporting prints that word in
-          # benign contexts (counts, property names, summary tables). Because
-          # the tests had never actually run, that was never exercised — it
-          # would have failed a genuinely successful 40-minute run. Match only
-          # line-initial diagnostics and toolchain failures.
-          if grep -qiE "^(error|thread .* panicked)|could not compile|command not found|no such file" komet-test.log komet-prove.log 2>/dev/null; then
+          TEST_EXIT="${{ steps.test.outputs.exit_code }}"
+          PROVE_EXIT="${{ steps.prove.outputs.exit_code }}"
+          echo "komet test  exit: ${TEST_EXIT:-<step never ran>}"
+          echo "komet prove exit: ${PROVE_EXIT:-<step never ran>}"
+
+          fail() {
             {
               echo ""
               echo "### Verdict: NOTHING VERIFIED"
               echo ""
-              echo "Komet ran but did not complete a property check. Treat this as"
-              echo "**no result**, not a pass — an absent finding is not a clean"
-              echo "finding, and nothing here may be cited as one."
+              echo "$1"
+              echo ""
+              echo "Treat this as **no result**, not a pass — an absent finding is not"
+              echo "a clean finding, and nothing here may be cited as one."
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Komet did not complete a property check."
+            echo "::error::$1"
             exit 1
+          }
+
+          [ -n "$TEST_EXIT" ]  || fail "The komet test step never ran."
+          [ -n "$PROVE_EXIT" ] || fail "The komet prove step never ran."
+          [ "$TEST_EXIT"  = "0" ] || fail "komet test exited ${TEST_EXIT} — no property was established."
+          [ "$PROVE_EXIT" = "0" ] || fail "komet prove exited ${PROVE_EXIT} — no proof was established."
+          [ -s komet-test.log ]  || fail "komet test produced no output."
+          [ -s komet-prove.log ] || fail "komet prove produced no output."
+
+          # Secondary: a zero exit with a traceback or hard error is still nothing.
+          if grep -qiE "traceback \(most recent call last\)|^[A-Za-z_.]*error:|could not compile|command not found|no such file" \
+               komet-test.log komet-prove.log 2>/dev/null; then
+            fail "Exit code was 0 but the log carries a hard error."
           fi
-          echo "### Verdict: properties checked — results above are real" >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo ""
+            echo "### Verdict: properties checked — results above are real"
+            echo ""
+            echo "\`komet test\` and \`komet prove\` both exited 0 with output."
+          } >> "$GITHUB_STEP_SUMMARY"
