@@ -1,0 +1,2344 @@
+=== RUN3 START 2026-09-01T08:56:23Z ===
+=== PREFLIGHT 2026-09-01T08:56:23Z ===
+    Finished `release` profile [optimized] target(s) in 23.79s
+    Finished `release` profile [optimized] target(s) in 22.54s
+✅ Build Complete
+
+--- GATE A: no Wasm 2.0 sections pykwasm cannot read ---
+sections: [0, 1, 2, 3, 5, 6, 7, 10, 11]
+GATE A PASS: MVP-only sections
+--- GATE B: every input/output type supported ---
+SUPPORTED TYPE NAMES (14):
+['address', 'bool', 'bytes', 'i128', 'i256', 'i32', 'i64', 'map', 'symbol', 'u128', 'u256', 'u32', 'u64', 'vec']
+
+FUNCTIONS komet will parse:
+  init                             in=['bytes', 'bytes']       out=[] <-- init
+  test_solvency_invariant          in=['i128']                 out=['bool'] <-- test fn
+  test_totals_never_negative       in=['i128']                 out=['bool'] <-- test fn
+  test_stake_accounting_is_exact   in=['i128']                 out=['bool'] <-- test fn
+
+KEY NAME USED FOR INPUTS: ['type_']
+
+NO TYPE PROBLEMS. Only the type/type_ key rename is needed.
+=== PREFLIGHT EXIT: 0 ===
+=== KOMET TEST START 2026-09-01T08:57:36Z ===
+stellar-shim: adding --optimize=false (pykwasm is MVP-only, rejects DataCount 0xc)
+ℹ️  CARGO_BUILD_RUSTFLAGS=--remap-path-prefix=/home/komet/.cargo/registry/src= SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo rustc --manifest-path=Cargo.toml --crate-type=cdylib --target=wasm32v1-none --release
+    Updating crates.io index
+     Locking 207 packages to latest compatible versions
+      Adding crypto-common v0.1.6 (available: v0.1.7)
+ Downloading crates ...
+  Downloaded ark-bn254 v0.5.0
+  Downloaded ark-ec v0.5.0
+  Downloaded log v0.4.34
+  Downloaded paste v1.0.15
+  Downloaded p256 v0.13.2
+  Downloaded num-traits v0.2.19
+  Downloaded ref-cast v1.0.27
+  Downloaded rand_core v0.6.4
+  Downloaded rustc_version v0.4.1
+  Downloaded serde_with_macros v3.22.0
+  Downloaded hashbrown v0.12.3
+  Downloaded zeroize_derive v1.5.0
+  Downloaded wasmi_arena v0.4.1
+  Downloaded visibility v0.1.1
+  Downloaded soroban-spec v27.0.6
+  Downloaded spki v0.7.3
+  Downloaded thiserror-impl v2.0.20
+  Downloaded zmij v1.0.23
+  Downloaded zeroize v1.9.0
+  Downloaded soroban-sdk-macros v27.0.6
+  Downloaded unicode-ident v1.0.24
+  Downloaded tinyvec v1.12.0
+  Downloaded soroban-env-common v27.0.1
+  Downloaded typenum v1.20.1
+  Downloaded rand v0.8.8
+  Downloaded wasmparser-nostd v0.100.2
+  Downloaded serde_json v1.0.151
+  Downloaded wasmparser v0.116.1
+  Downloaded soroban-wasmi v0.31.1-soroban.20.0.1
+  Downloaded soroban-sdk v27.0.6
+  Downloaded serde_with v3.22.0
+  Downloaded curve25519-dalek v5.0.0
+  Downloaded time v0.3.55
+  Downloaded schemars v0.9.0
+  Downloaded zerocopy v0.8.56
+  Downloaded syn v2.0.119
+  Downloaded syn v3.0.4
+  Downloaded serde v1.0.229
+  Downloaded schemars v1.2.2
+  Downloaded time-macros v0.2.32
+  Downloaded stellar-strkey v0.0.16
+  Downloaded jiff v0.2.35
+  Downloaded static_assertions v1.1.0
+  Downloaded spin v0.9.9
+  Downloaded soroban-env-macros v27.0.1
+  Downloaded smallvec v1.15.2
+  Downloaded prettyplease v0.2.37
+  Downloaded libc v0.2.189
+  Downloaded wasmi_core v0.13.0
+  Downloaded thiserror-impl v1.0.69
+  Downloaded thiserror v2.0.20
+  Downloaded strsim v0.11.1
+  Downloaded stellar-strkey v0.0.13
+  Downloaded soroban-env-host v27.0.1
+  Downloaded sha2 v0.10.9
+  Downloaded chrono v0.4.45
+  Downloaded thiserror v1.0.69
+  Downloaded signature v2.2.0
+  Downloaded schemars v0.8.22
+  Downloaded quote v1.0.47
+  Downloaded proc-macro2 v1.0.107
+  Downloaded soroban-builtin-sdk-macros v27.0.1
+  Downloaded sec1 v0.7.3
+  Downloaded serde_derive v1.0.229
+  Downloaded serde_core v1.0.229
+  Downloaded sha3 v0.10.9
+  Downloaded time-core v0.1.9
+  Downloaded libm v0.2.16
+  Downloaded itertools v0.13.0
+  Downloaded hashbrown v0.17.1
+  Downloaded tinyvec_macros v0.1.1
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded soroban-env-guest v27.0.1
+  Downloaded version_check v0.9.5
+  Downloaded subtle v2.6.1
+  Downloaded soroban-spec-rust v27.0.6
+  Downloaded rfc6979 v0.4.0
+  Downloaded hashbrown v0.15.5
+  Downloaded semver v1.0.28
+  Downloaded pkcs8 v0.10.2
+  Downloaded num-bigint v0.4.8
+  Downloaded indexmap v2.14.1
+  Downloaded ed25519-dalek v2.2.0
+  Downloaded crypto-bigint v0.5.5
+  Downloaded ref-cast-impl v1.0.27
+  Downloaded ppv-lite86 v0.2.21
+  Downloaded memchr v2.8.3
+  Downloaded k256 v0.13.4
+  Downloaded stellar-xdr v27.0.0
+  Downloaded jiff-tzdb v0.1.8
+  Downloaded der v0.7.10
+  Downloaded primeorder v0.13.6
+  Downloaded powerfmt v0.2.0
+  Downloaded num-integer v0.1.47
+  Downloaded iana-time-zone v0.1.65
+  Downloaded hybrid-array v0.4.14
+  Downloaded heapless v0.8.0
+  Downloaded getrandom v0.2.17
+  Downloaded ethnum v1.5.3
+  Downloaded defmt v1.1.1
+  Downloaded bs58 v0.5.1
+  Downloaded base64ct v1.8.3
+  Downloaded base64 v0.22.1
+  Downloaded arrayvec v0.7.8
+  Downloaded ark-poly v0.5.0
+  Downloaded ark-ff-macros v0.5.0
+  Downloaded rand_chacha v0.3.1
+  Downloaded generic-array v0.14.9
+  Downloaded digest v0.10.7
+  Downloaded deranged v0.5.8
+  Downloaded defmt-macros v1.1.1
+  Downloaded darling v0.20.11
+  Downloaded crate-git-revision v0.0.9
+  Downloaded crate-git-revision v0.0.6
+  Downloaded bytes-lit v0.0.6
+  Downloaded block-buffer v0.12.1
+  Downloaded base16ct v0.2.0
+  Downloaded ark-serialize v0.5.0
+  Downloaded equivalent v1.0.2
+  Downloaded enum-ordinalize v4.4.2
+  Downloaded downcast-rs v1.2.1
+  Downloaded curve25519-dalek-derive v0.1.1
+  Downloaded curve25519-dalek v4.1.3
+  Downloaded cpufeatures v0.3.1
+  Downloaded cpufeatures v0.2.17
+  Downloaded cfg-if v1.0.4
+  Downloaded ark-ff-asm v0.5.0
+  Downloaded once_cell v1.21.4
+  Downloaded num-derive v0.4.2
+  Downloaded num-conv v0.2.2
+  Downloaded keccak v0.1.6
+  Downloaded jiff-tzdb-platform v0.1.3
+  Downloaded ident_case v1.0.1
+  Downloaded hex-literal v0.4.1
+  Downloaded hex v0.4.3
+  Downloaded heck v0.5.0
+  Downloaded ff v0.13.1
+  Downloaded either v1.18.0
+  Downloaded crypto-common v0.1.6
+  Downloaded byteorder v1.5.0
+  Downloaded ark-serialize-derive v0.5.0
+  Downloaded macro-string v0.1.4
+  Downloaded itoa v1.0.18
+  Downloaded hash32 v0.3.1
+  Downloaded escape-bytes v0.1.1
+  Downloaded educe v0.6.0
+  Downloaded ecdsa v0.16.9
+  Downloaded defmt-parser v1.0.0
+  Downloaded darling_macro v0.23.0
+  Downloaded darling_macro v0.20.11
+  Downloaded crypto-common v0.2.2
+  Downloaded const-oid v0.9.6
+  Downloaded cfg_eval v0.1.2
+  Downloaded block-buffer v0.10.4
+  Downloaded bitflags v1.3.2
+  Downloaded autocfg v1.5.1
+  Downloaded ark-std v0.5.0
+  Downloaded ark-ff v0.5.0
+  Downloaded jiff-core v0.1.0
+  Downloaded indexmap-nostd v0.4.0
+  Downloaded indexmap v1.9.3
+  Downloaded hmac v0.12.1
+  Downloaded group v0.13.0
+  Downloaded fnv v1.0.7
+  Downloaded enum-ordinalize-derive v4.4.2
+  Downloaded elliptic-curve v0.13.8
+  Downloaded ed25519 v2.2.3
+  Downloaded dyn-clone v1.0.20
+  Downloaded digest v0.11.3
+  Downloaded data-encoding v2.11.1
+  Downloaded darling_core v0.23.0
+  Downloaded darling_core v0.20.11
+  Downloaded darling v0.23.0
+  Downloaded ark-bls12-381 v0.5.0
+  Downloaded allocator-api2 v0.2.21
+  Downloaded ahash v0.8.12
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.151
+   Compiling memchr v2.8.3
+   Compiling syn v3.0.4
+   Compiling itoa v1.0.18
+   Compiling syn v2.0.119
+   Compiling ident_case v1.0.1
+   Compiling strsim v0.11.1
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.9
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling serde_derive v1.0.229
+   Compiling schemars v0.8.22
+   Compiling dyn-clone v1.0.20
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling cfg-if v1.0.4
+   Compiling digest v0.10.7
+   Compiling darling_core v0.23.0
+   Compiling cpufeatures v0.2.17
+   Compiling data-encoding v2.11.1
+   Compiling sha2 v0.10.9
+   Compiling ethnum v1.5.3
+   Compiling cfg_eval v0.1.2
+   Compiling escape-bytes v0.1.1
+   Compiling num-traits v0.2.19
+   Compiling semver v1.0.28
+   Compiling either v1.18.0
+   Compiling itertools v0.13.0
+   Compiling darling_macro v0.23.0
+   Compiling crate-git-revision v0.0.6
+   Compiling darling v0.23.0
+   Compiling serde_with_macros v3.22.0
+   Compiling stellar-strkey v0.0.13
+   Compiling stellar-xdr v27.0.0
+   Compiling hex v0.4.3
+   Compiling soroban-env-common v27.0.1
+   Compiling hashbrown v0.17.1
+   Compiling equivalent v1.0.2
+   Compiling serde_with v3.22.0
+   Compiling thiserror v1.0.69
+   Compiling thiserror-impl v1.0.69
+   Compiling indexmap v2.14.1
+   Compiling num-derive v0.4.2
+   Compiling prettyplease v0.2.37
+   Compiling fnv v1.0.7
+   Compiling darling_core v0.20.11
+   Compiling wasmparser v0.116.1
+   Compiling heapless v0.8.0
+   Compiling base64 v0.22.1
+   Compiling byteorder v1.5.0
+   Compiling hash32 v0.3.1
+   Compiling darling_macro v0.20.11
+   Compiling stellar-strkey v0.0.16
+   Compiling num-integer v0.1.47
+   Compiling crate-git-revision v0.0.9
+   Compiling rustc_version v0.4.1
+   Compiling static_assertions v1.1.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling soroban-sdk v27.0.6
+   Compiling num-bigint v0.4.8
+   Compiling darling v0.20.11
+   Compiling macro-string v0.1.4
+   Compiling heck v0.5.0
+   Compiling visibility v0.1.1
+   Compiling bytes-lit v0.0.6
+   Compiling soroban-spec v27.0.6
+   Compiling soroban-spec-rust v27.0.6
+   Compiling soroban-env-macros v27.0.1
+   Compiling soroban-env-guest v27.0.1
+   Compiling soroban-sdk-macros v27.0.6
+   Compiling komet-harness v0.1.0 (/work/contracts/komet-harness)
+warning: constant `SECONDS_PER_DAY` is never used
+  --> src/../../protection-pool/src/types.rs:33:11
+   |
+33 | pub const SECONDS_PER_DAY: u64 = 86_400;
+   |           ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `CLAIM_WINDOW_SECONDS` is never used
+  --> src/../../protection-pool/src/types.rs:37:11
+   |
+37 | pub const CLAIM_WINDOW_SECONDS: u64 = 30 * SECONDS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BPS_DENOMINATOR` is never used
+  --> src/../../protection-pool/src/types.rs:41:11
+   |
+41 | pub const BPS_DENOMINATOR: i128 = 10_000;
+   |           ^^^^^^^^^^^^^^^
+
+warning: constant `TIME_GATE_LEDGERS` is never used
+  --> src/../../protection-pool/src/types.rs:44:11
+   |
+44 | pub const TIME_GATE_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `COOLDOWN_LEDGERS` is never used
+  --> src/../../protection-pool/src/types.rs:46:11
+   |
+46 | pub const COOLDOWN_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^^
+
+warning: constant `VESTING_LEDGERS` is never used
+  --> src/../../protection-pool/src/types.rs:48:11
+   |
+48 | pub const VESTING_LEDGERS: u32 = 45 * LEDGERS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^
+
+warning: constant `PENALTY_LOCK_LEDGERS` is never used
+  --> src/../../protection-pool/src/types.rs:51:11
+   |
+51 | pub const PENALTY_LOCK_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `APPROVE_WINDOW_LEDGERS` is never used
+   --> src/../../protection-pool/src/types.rs:108:11
+    |
+108 | pub const APPROVE_WINDOW_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
+    |           ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `COLLECTION_INACTIVITY_LEDGERS` is never used
+   --> src/../../protection-pool/src/types.rs:119:11
+    |
+119 | pub const COLLECTION_INACTIVITY_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_DEPLOY_BPS` is never used
+   --> src/../../protection-pool/src/types.rs:153:11
+    |
+153 | pub const MAX_DEPLOY_BPS: i128 = 8_000;
+    |           ^^^^^^^^^^^^^^
+
+warning: constant `DEPLOY_BPS_DENOMINATOR` is never used
+   --> src/../../protection-pool/src/types.rs:161:11
+    |
+161 | pub const DEPLOY_BPS_DENOMINATOR: i128 = 10_000;
+    |           ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_REBALANCE_SLIPPAGE_BPS` is never used
+   --> src/../../protection-pool/src/types.rs:169:11
+    |
+169 | pub const MAX_REBALANCE_SLIPPAGE_BPS: i128 = 500;
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TIER_A_RATIO` is never used
+   --> src/../../protection-pool/src/types.rs:204:11
+    |
+204 | pub const TIER_A_RATIO: i128 = 15;
+    |           ^^^^^^^^^^^^
+
+warning: constant `TIER_B_RATIO` is never used
+   --> src/../../protection-pool/src/types.rs:205:11
+    |
+205 | pub const TIER_B_RATIO: i128 = 10;
+    |           ^^^^^^^^^^^^
+
+warning: constant `TIER_C_RATIO` is never used
+   --> src/../../protection-pool/src/types.rs:206:11
+    |
+206 | pub const TIER_C_RATIO: i128 = 5;
+    |           ^^^^^^^^^^^^
+
+warning: constant `TIER_COVERAGE_BPS` is never used
+   --> src/../../protection-pool/src/types.rs:207:11
+    |
+207 | pub const TIER_COVERAGE_BPS: i128 = 10_000; // 100% of ratio, admin-adjustable
+    |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `TIER_BPS_DENOMINATOR` is never used
+   --> src/../../protection-pool/src/types.rs:208:11
+    |
+208 | pub const TIER_BPS_DENOMINATOR: i128 = 10_000;
+    |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_oracle_pubkey` is never used
+   --> src/../../protection-pool/src/storage.rs:143:8
+    |
+143 | pub fn get_oracle_pubkey(env: &Env) -> Option<BytesN<32>> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `get_daily_outflow` is never used
+   --> src/../../protection-pool/src/storage.rs:243:8
+    |
+243 | pub fn get_daily_outflow(env: &Env, current_day: u32) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `set_daily_outflow` is never used
+   --> src/../../protection-pool/src/storage.rs:259:8
+    |
+259 | pub fn set_daily_outflow(env: &Env, current_day: u32, value: i128) {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `get_daily_entitlement` is never used
+   --> src/../../protection-pool/src/storage.rs:271:8
+    |
+271 | pub fn get_daily_entitlement(env: &Env, current_day: u32) -> (i128, u32) {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_daily_entitlement` is never used
+   --> src/../../protection-pool/src/storage.rs:294:8
+    |
+294 | pub fn set_daily_entitlement(env: &Env, current_day: u32, total: i128, count: u32) {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_vault` is never used
+   --> src/../../protection-pool/src/storage.rs:312:8
+    |
+312 | pub fn get_vault(env: &Env) -> Option<Address> {
+    |        ^^^^^^^^^
+
+warning: function `set_vault` is never used
+   --> src/../../protection-pool/src/storage.rs:316:8
+    |
+316 | pub fn set_vault(env: &Env, vault: &Address) {
+    |        ^^^^^^^^^
+
+warning: function `get_treasury` is never used
+   --> src/../../protection-pool/src/storage.rs:320:8
+    |
+320 | pub fn get_treasury(env: &Env) -> Option<Address> {
+    |        ^^^^^^^^^^^^
+
+warning: function `set_treasury` is never used
+   --> src/../../protection-pool/src/storage.rs:324:8
+    |
+324 | pub fn set_treasury(env: &Env, treasury: &Address) {
+    |        ^^^^^^^^^^^^
+
+warning: function `get_deploy_bps` is never used
+   --> src/../../protection-pool/src/storage.rs:329:8
+    |
+329 | pub fn get_deploy_bps(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^
+
+warning: function `set_deploy_bps` is never used
+   --> src/../../protection-pool/src/storage.rs:336:8
+    |
+336 | pub fn set_deploy_bps(env: &Env, value: i128) {
+    |        ^^^^^^^^^^^^^^
+
+warning: function `get_total_deployed_shares` is never used
+   --> src/../../protection-pool/src/storage.rs:340:8
+    |
+340 | pub fn get_total_deployed_shares(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_total_deployed_shares` is never used
+   --> src/../../protection-pool/src/storage.rs:347:8
+    |
+347 | pub fn set_total_deployed_shares(env: &Env, value: i128) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_total_deployed_xlm` is never used
+   --> src/../../protection-pool/src/storage.rs:353:8
+    |
+353 | pub fn get_total_deployed_xlm(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_total_deployed_xlm` is never used
+   --> src/../../protection-pool/src/storage.rs:360:8
+    |
+360 | pub fn set_total_deployed_xlm(env: &Env, value: i128) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_total_extracted_yield` is never used
+   --> src/../../protection-pool/src/storage.rs:366:8
+    |
+366 | pub fn get_total_extracted_yield(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_total_extracted_yield` is never used
+   --> src/../../protection-pool/src/storage.rs:373:8
+    |
+373 | pub fn set_total_extracted_yield(env: &Env, value: i128) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_claim` is never used
+   --> src/../../protection-pool/src/storage.rs:407:8
+    |
+407 | pub fn get_claim(env: &Env, claim_id: &BytesN<32>) -> Option<Claim> {
+    |        ^^^^^^^^^
+
+warning: function `set_claim` is never used
+   --> src/../../protection-pool/src/storage.rs:413:8
+    |
+413 | pub fn set_claim(env: &Env, claim_id: &BytesN<32>, claim: &Claim) {
+    |        ^^^^^^^^^
+
+warning: function `get_override` is never used
+   --> src/../../protection-pool/src/storage.rs:425:8
+    |
+425 | pub fn get_override(env: &Env, claim_id: &BytesN<32>) -> Option<OverrideRequest> {
+    |        ^^^^^^^^^^^^
+
+warning: function `set_override` is never used
+   --> src/../../protection-pool/src/storage.rs:431:8
+    |
+431 | pub fn set_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
+    |        ^^^^^^^^^^^^
+
+warning: function `remove_override` is never used
+   --> src/../../protection-pool/src/storage.rs:443:8
+    |
+443 | pub fn remove_override(env: &Env, claim_id: &BytesN<32>) {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `is_approval_revoked` is never used
+   --> src/../../protection-pool/src/storage.rs:478:8
+    |
+478 | pub fn is_approval_revoked(env: &Env, approval_hash: &BytesN<32>) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_approval_revoked` is never used
+   --> src/../../protection-pool/src/storage.rs:484:8
+    |
+484 | pub fn set_approval_revoked(env: &Env, approval_hash: &BytesN<32>) {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `transfer_admin` is never used
+  --> src/../../protection-pool/src/admin.rs:96:8
+   |
+96 | pub fn transfer_admin(env: &Env, new_admin: &Address) -> Result<(), PoolError> {
+   |        ^^^^^^^^^^^^^^
+
+warning: function `pause` is never used
+   --> src/../../protection-pool/src/admin.rs:114:8
+    |
+114 | pub fn pause(env: &Env) {
+    |        ^^^^^
+
+warning: function `unpause` is never used
+   --> src/../../protection-pool/src/admin.rs:120:8
+    |
+120 | pub fn unpause(env: &Env) {
+    |        ^^^^^^^
+
+warning: function `suspend_stake` is never used
+   --> src/../../protection-pool/src/admin.rs:149:8
+    |
+149 | pub fn suspend_stake(env: &Env, wallet: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `unsuspend_stake` is never used
+   --> src/../../protection-pool/src/admin.rs:186:8
+    |
+186 | pub fn unsuspend_stake(
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `set_pool_cap` is never used
+   --> src/../../protection-pool/src/admin.rs:224:8
+    |
+224 | pub fn set_pool_cap(env: &Env, new_cap: i128) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^
+
+warning: function `set_oracle` is never used
+   --> src/../../protection-pool/src/admin.rs:242:8
+    |
+242 | pub fn set_oracle(env: &Env, new_oracle: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^
+
+warning: function `set_oracle_pubkey` is never used
+   --> src/../../protection-pool/src/admin.rs:273:8
+    |
+273 | pub fn set_oracle_pubkey(env: &Env, new_pubkey: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `set_oracle_identity` is never used
+   --> src/../../protection-pool/src/admin.rs:313:8
+    |
+313 | pub fn set_oracle_identity(
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_co_signer` is never used
+   --> src/../../protection-pool/src/admin.rs:332:8
+    |
+332 | pub fn set_co_signer(env: &Env, new_co_signer: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^
+
+warning: struct `Deployed` is never constructed
+   --> src/../../protection-pool/src/vault.rs:103:12
+    |
+103 | pub struct Deployed {
+    |            ^^^^^^^^
+
+warning: struct `LiquidityProvided` is never constructed
+   --> src/../../protection-pool/src/vault.rs:111:12
+    |
+111 | pub struct LiquidityProvided {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `LiquidityAutoRebalanced` is never constructed
+   --> src/../../protection-pool/src/vault.rs:122:12
+    |
+122 | pub struct LiquidityAutoRebalanced {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `LiquidityAutoDeployed` is never constructed
+   --> src/../../protection-pool/src/vault.rs:132:12
+    |
+132 | pub struct LiquidityAutoDeployed {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `YieldExtracted` is never constructed
+   --> src/../../protection-pool/src/vault.rs:140:12
+    |
+140 | pub struct YieldExtracted {
+    |            ^^^^^^^^^^^^^^
+
+warning: struct `YieldWithdrawn` is never constructed
+   --> src/../../protection-pool/src/vault.rs:149:12
+    |
+149 | pub struct YieldWithdrawn {
+    |            ^^^^^^^^^^^^^^
+
+warning: struct `DeploymentShortfall` is never constructed
+   --> src/../../protection-pool/src/vault.rs:166:12
+    |
+166 | pub struct DeploymentShortfall {
+    |            ^^^^^^^^^^^^^^^^^^^
+
+warning: function `yield_balance` is never used
+   --> src/../../protection-pool/src/vault.rs:220:8
+    |
+220 | pub fn yield_balance(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^
+
+warning: function `deployment_ratio_bps` is never used
+   --> src/../../protection-pool/src/vault.rs:239:8
+    |
+239 | pub fn deployment_ratio_bps(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_vault` is never used
+   --> src/../../protection-pool/src/vault.rs:256:8
+    |
+256 | pub fn set_vault(env: &Env, vault: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^
+
+warning: function `set_treasury` is never used
+   --> src/../../protection-pool/src/vault.rs:268:8
+    |
+268 | pub fn set_treasury(env: &Env, treasury: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^
+
+warning: function `set_deploy_bps` is never used
+   --> src/../../protection-pool/src/vault.rs:290:8
+    |
+290 | pub fn set_deploy_bps(env: &Env, bps: i128) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^
+
+warning: function `authorize_deposit` is never used
+   --> src/../../protection-pool/src/vault.rs:354:4
+    |
+354 | fn authorize_deposit(
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `authorize_withdraw` is never used
+   --> src/../../protection-pool/src/vault.rs:417:4
+    |
+417 | fn authorize_withdraw(env: &Env, vault_addr: &Address, shares: i128, mins: &Vec<i128>) {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `deploy_to_vault` is never used
+   --> src/../../protection-pool/src/vault.rs:441:8
+    |
+441 | pub fn deploy_to_vault(
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `auto_deploy_liquidity` is never used
+   --> src/../../protection-pool/src/vault.rs:530:8
+    |
+530 | pub fn auto_deploy_liquidity(env: &Env) -> Result<i128, PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `redeem` is never used
+   --> src/../../protection-pool/src/vault.rs:620:4
+    |
+620 | fn redeem(
+    |    ^^^^^^
+
+warning: function `provide_liquidity` is never used
+   --> src/../../protection-pool/src/vault.rs:695:8
+    |
+695 | pub fn provide_liquidity(
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `ensure_liquidity` is never used
+   --> src/../../protection-pool/src/vault.rs:731:8
+    |
+731 | pub fn ensure_liquidity(env: &Env) -> Result<i128, PoolError> {
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `extract_yield` is never used
+   --> src/../../protection-pool/src/vault.rs:806:8
+    |
+806 | pub fn extract_yield(env: &Env, shares: i128, min_xlm_out: i128) -> Result<i128, PoolError> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `withdraw_yield` is never used
+   --> src/../../protection-pool/src/vault.rs:850:8
+    |
+850 | pub fn withdraw_yield(env: &Env, amount: i128) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^
+
+warning: struct `EmergencyExit` is never constructed
+  --> src/../../protection-pool/src/stake.rs:55:12
+   |
+55 | pub struct EmergencyExit {
+   |            ^^^^^^^^^^^^^
+
+warning: function `set_beneficiary` is never used
+   --> src/../../protection-pool/src/stake.rs:197:8
+    |
+197 | pub fn set_beneficiary(
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `emergency_exit` is never used
+   --> src/../../protection-pool/src/stake.rs:299:8
+    |
+299 | pub fn emergency_exit(env: &Env, staker: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^
+
+warning: constant `APPROVAL_DOMAIN` is never used
+  --> src/../../protection-pool/src/claim.rs:64:7
+   |
+64 | const APPROVAL_DOMAIN: &str = "SAFU_CLAIM_APPROVAL_SOROBAN";
+   |       ^^^^^^^^^^^^^^^
+
+warning: struct `ClaimSubmitted` is never constructed
+  --> src/../../protection-pool/src/claim.rs:71:12
+   |
+71 | pub struct ClaimSubmitted {
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `ClaimQueued` is never constructed
+  --> src/../../protection-pool/src/claim.rs:83:12
+   |
+83 | pub struct ClaimQueued {
+   |            ^^^^^^^^^^^
+
+warning: struct `ClaimQueueReleased` is never constructed
+  --> src/../../protection-pool/src/claim.rs:92:12
+   |
+92 | pub struct ClaimQueueReleased {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `ClaimQueueExpired` is never constructed
+   --> src/../../protection-pool/src/claim.rs:100:12
+    |
+100 | pub struct ClaimQueueExpired {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `ClaimUnlocked` is never constructed
+   --> src/../../protection-pool/src/claim.rs:107:12
+    |
+107 | pub struct ClaimUnlocked {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `ClaimApproved` is never constructed
+   --> src/../../protection-pool/src/claim.rs:116:12
+    |
+116 | pub struct ClaimApproved {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `ClaimExpired` is never constructed
+   --> src/../../protection-pool/src/claim.rs:127:12
+    |
+127 | pub struct ClaimExpired {
+    |            ^^^^^^^^^^^^
+
+warning: struct `ClaimStreamed` is never constructed
+   --> src/../../protection-pool/src/claim.rs:135:12
+    |
+135 | pub struct ClaimStreamed {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `ClaimCancelled` is never constructed
+   --> src/../../protection-pool/src/claim.rs:142:12
+    |
+142 | pub struct ClaimCancelled {
+    |            ^^^^^^^^^^^^^^
+
+warning: struct `OverrideExecuted` is never constructed
+   --> src/../../protection-pool/src/claim.rs:152:12
+    |
+152 | pub struct OverrideExecuted {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: struct `OverrideCancelled` is never constructed
+   --> src/../../protection-pool/src/claim.rs:160:12
+    |
+160 | pub struct OverrideCancelled {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `ApprovalRevoked` is never constructed
+   --> src/../../protection-pool/src/claim.rs:169:12
+    |
+169 | pub struct ApprovalRevoked {
+    |            ^^^^^^^^^^^^^^^
+
+warning: function `tier_ratio` is never used
+   --> src/../../protection-pool/src/claim.rs:179:4
+    |
+179 | fn tier_ratio(tier: u32) -> Result<i128, PoolError> {
+    |    ^^^^^^^^^^
+
+warning: function `tier_cap` is never used
+   --> src/../../protection-pool/src/claim.rs:190:8
+    |
+190 | pub fn tier_cap(stake_amount: i128, tier: u32) -> Result<i128, PoolError> {
+    |        ^^^^^^^^
+
+warning: function `stress_cap` is never used
+   --> src/../../protection-pool/src/claim.rs:196:8
+    |
+196 | pub fn stress_cap(env: &Env) -> i128 {
+    |        ^^^^^^^^^^
+
+warning: function `dynamic_outflow_bps` is never used
+   --> src/../../protection-pool/src/claim.rs:217:8
+    |
+217 | pub fn dynamic_outflow_bps(env: &Env, base: i128) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `current_day` is never used
+   --> src/../../protection-pool/src/claim.rs:232:4
+    |
+232 | fn current_day(env: &Env) -> u32 {
+    |    ^^^^^^^^^^^
+
+warning: function `compute_claim_id` is never used
+   --> src/../../protection-pool/src/claim.rs:238:4
+    |
+238 | fn compute_claim_id(env: &Env, wallet: &Address, tx_hash: &BytesN<32>) -> BytesN<32> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `build_approval_payload` is never used
+   --> src/../../protection-pool/src/claim.rs:275:8
+    |
+275 | pub fn build_approval_payload(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `approval_hash` is never used
+   --> src/../../protection-pool/src/claim.rs:300:4
+    |
+300 | fn approval_hash(env: &Env, payload: &Bytes) -> BytesN<32> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `verify_oracle_signature` is never used
+   --> src/../../protection-pool/src/claim.rs:321:4
+    |
+321 | fn verify_oracle_signature(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `activate_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:390:4
+    |
+390 | fn activate_claim(env: &Env, stake_record: &mut StakeRecord, claim: &mut Claim) -> i128 {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `admit_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:444:4
+    |
+444 | fn admit_claim(
+    |    ^^^^^^^^^^^
+
+warning: function `submit_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:544:8
+    |
+544 | pub fn submit_claim(
+    |        ^^^^^^^^^^^^
+
+warning: function `try_release_queued_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:743:8
+    |
+743 | pub fn try_release_queued_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `expire_queued_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:809:8
+    |
+809 | pub fn expire_queued_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `unlock_pending_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:849:8
+    |
+849 | pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `approve_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:889:8
+    |
+889 | pub fn approve_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `expire_pending_approval` is never used
+   --> src/../../protection-pool/src/claim.rs:934:8
+    |
+934 | pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `expire_stale_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:987:8
+    |
+987 | pub fn expire_stale_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `claim_stream` is never used
+    --> src/../../protection-pool/src/claim.rs:1035:8
+     |
+1035 | pub fn claim_stream(
+     |        ^^^^^^^^^^^^
+
+warning: function `cancel_claim` is never used
+    --> src/../../protection-pool/src/claim.rs:1141:8
+     |
+1141 | pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+     |        ^^^^^^^^^^^^
+
+warning: function `approve_override` is never used
+    --> src/../../protection-pool/src/claim.rs:1204:8
+     |
+1204 | pub fn approve_override(
+     |        ^^^^^^^^^^^^^^^^
+
+warning: function `execute_override` is never used
+    --> src/../../protection-pool/src/claim.rs:1275:4
+     |
+1275 | fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) -> Result<(), PoolError> {
+     |    ^^^^^^^^^^^^^^^^
+
+warning: function `cancel_pending_override` is never used
+    --> src/../../protection-pool/src/claim.rs:1439:8
+     |
+1439 | pub fn cancel_pending_override(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `revoke_approval` is never used
+    --> src/../../protection-pool/src/claim.rs:1489:8
+     |
+1489 | pub fn revoke_approval(
+     |        ^^^^^^^^^^^^^^^
+
+warning: `komet-harness` (lib) generated 112 warnings
+    Finished `release` profile [optimized] target(s) in 23.54s
+ℹ️  Build Summary:
+    Wasm File: /tmp/tmpe153vu4ukomet_komet-harness/komet_harness.wasm (32670 bytes)
+    Wasm Hash: 3a6d77f2d3dd6052762999326f7418f2d82f0fe8de8248745889a30ca4285a61
+    Wasm Size: 32670 bytes
+    Exported Functions: 6 found
+      • get_total_allocated
+      • get_total_staked
+      • get_total_stakers
+      • komet_init
+      • stake
+      • withdraw
+✅ Build Complete
+
+stellar-shim: adding --optimize=false (pykwasm is MVP-only, rejects DataCount 0xc)
+ℹ️  CARGO_BUILD_RUSTFLAGS=--remap-path-prefix=/home/komet/.cargo/registry/src= SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo rustc --manifest-path=Cargo.toml --crate-type=cdylib --target=wasm32v1-none --release
+    Updating crates.io index
+     Locking 207 packages to latest compatible versions
+      Adding crypto-common v0.1.6 (available: v0.1.7)
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling strsim v0.11.1
+   Compiling ident_case v1.0.1
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.9
+   Compiling autocfg v1.5.1
+   Compiling typenum v1.20.1
+   Compiling serde_derive v1.0.229
+   Compiling schemars v0.8.22
+   Compiling dyn-clone v1.0.20
+   Compiling data-encoding v2.11.1
+   Compiling block-buffer v0.10.4
+   Compiling darling_core v0.23.0
+   Compiling crypto-common v0.1.6
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.4
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling ethnum v1.5.3
+   Compiling cfg_eval v0.1.2
+   Compiling escape-bytes v0.1.1
+   Compiling num-traits v0.2.19
+   Compiling semver v1.0.28
+   Compiling either v1.18.0
+   Compiling itertools v0.13.0
+   Compiling darling_macro v0.23.0
+   Compiling thiserror v1.0.69
+   Compiling crate-git-revision v0.0.6
+   Compiling darling v0.23.0
+   Compiling serde_with_macros v3.22.0
+   Compiling stellar-strkey v0.0.13
+   Compiling stellar-xdr v27.0.0
+   Compiling hex v0.4.3
+   Compiling soroban-env-common v27.0.1
+   Compiling equivalent v1.0.2
+   Compiling hashbrown v0.17.1
+   Compiling serde_with v3.22.0
+   Compiling num-derive v0.4.2
+   Compiling thiserror-impl v1.0.69
+   Compiling indexmap v2.14.1
+   Compiling fnv v1.0.7
+   Compiling prettyplease v0.2.37
+   Compiling wasmparser v0.116.1
+   Compiling darling_core v0.20.11
+   Compiling heapless v0.8.0
+   Compiling base64 v0.22.1
+   Compiling byteorder v1.5.0
+   Compiling hash32 v0.3.1
+   Compiling darling_macro v0.20.11
+   Compiling stellar-strkey v0.0.16
+   Compiling crate-git-revision v0.0.9
+   Compiling num-integer v0.1.47
+   Compiling rustc_version v0.4.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling static_assertions v1.1.0
+   Compiling soroban-sdk v27.0.6
+   Compiling num-bigint v0.4.8
+   Compiling darling v0.20.11
+   Compiling macro-string v0.1.4
+   Compiling heck v0.5.0
+   Compiling bytes-lit v0.0.6
+   Compiling visibility v0.1.1
+   Compiling soroban-spec v27.0.6
+   Compiling soroban-spec-rust v27.0.6
+   Compiling soroban-env-macros v27.0.1
+   Compiling soroban-env-guest v27.0.1
+   Compiling soroban-sdk-macros v27.0.6
+   Compiling komet-mock-token v0.1.0 (/work/contracts/komet-mock-token)
+    Finished `release` profile [optimized] target(s) in 25.65s
+ℹ️  Build Summary:
+    Wasm File: /tmp/tmp0qlnpee9komet_komet-mock-token/komet_mock_token.wasm (2344 bytes)
+    Wasm Hash: 82df6486d88ab54913989a59c24df3a24829f86d25f065b6b64087b489f29676
+    Wasm Size: 2344 bytes
+    Exported Functions: 3 found
+      • balance
+      • mint
+      • transfer
+✅ Build Complete
+
+stellar-shim: adding --optimize=false (pykwasm is MVP-only, rejects DataCount 0xc)
+ℹ️  CARGO_BUILD_RUSTFLAGS=--remap-path-prefix=/home/komet/.cargo/registry/src= SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo rustc --manifest-path=Cargo.toml --crate-type=cdylib --target=wasm32v1-none --release
+    Updating crates.io index
+     Locking 207 packages to latest compatible versions
+      Adding crypto-common v0.1.6 (available: v0.1.7)
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.151
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling ident_case v1.0.1
+   Compiling strsim v0.11.1
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.9
+   Compiling autocfg v1.5.1
+   Compiling typenum v1.20.1
+   Compiling schemars v0.8.22
+   Compiling block-buffer v0.10.4
+   Compiling serde_derive v1.0.229
+   Compiling crypto-common v0.1.6
+   Compiling dyn-clone v1.0.20
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.4
+   Compiling data-encoding v2.11.1
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling darling_core v0.23.0
+   Compiling escape-bytes v0.1.1
+   Compiling ethnum v1.5.3
+   Compiling num-traits v0.2.19
+   Compiling semver v1.0.28
+   Compiling either v1.18.0
+   Compiling cfg_eval v0.1.2
+   Compiling itertools v0.13.0
+   Compiling hashbrown v0.17.1
+   Compiling crate-git-revision v0.0.6
+   Compiling darling_macro v0.23.0
+   Compiling stellar-strkey v0.0.13
+   Compiling stellar-xdr v27.0.0
+   Compiling darling v0.23.0
+   Compiling hex v0.4.3
+   Compiling serde_with_macros v3.22.0
+   Compiling soroban-env-common v27.0.1
+   Compiling thiserror v1.0.69
+   Compiling equivalent v1.0.2
+   Compiling indexmap v2.14.1
+   Compiling num-derive v0.4.2
+   Compiling serde_with v3.22.0
+   Compiling thiserror-impl v1.0.69
+   Compiling prettyplease v0.2.37
+   Compiling fnv v1.0.7
+   Compiling darling_core v0.20.11
+   Compiling wasmparser v0.116.1
+   Compiling base64 v0.22.1
+   Compiling heapless v0.8.0
+   Compiling byteorder v1.5.0
+   Compiling hash32 v0.3.1
+   Compiling darling_macro v0.20.11
+   Compiling stellar-strkey v0.0.16
+   Compiling crate-git-revision v0.0.9
+   Compiling num-integer v0.1.47
+   Compiling rustc_version v0.4.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling static_assertions v1.1.0
+   Compiling soroban-sdk v27.0.6
+   Compiling num-bigint v0.4.8
+   Compiling darling v0.20.11
+   Compiling macro-string v0.1.4
+   Compiling heck v0.5.0
+   Compiling bytes-lit v0.0.6
+   Compiling visibility v0.1.1
+   Compiling soroban-spec v27.0.6
+   Compiling soroban-spec-rust v27.0.6
+   Compiling soroban-env-macros v27.0.1
+   Compiling soroban-env-guest v27.0.1
+   Compiling soroban-sdk-macros v27.0.6
+   Compiling test-protection-pool v0.1.0 (/work/contracts/test-protection-pool)
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> src/lib.rs:110:18
+    |
+110 |     fn pool(env: &Env) -> pool::Client {
+    |                  ^^^^     ^^^^^^^^^^^^ the same lifetime is hidden here
+    |                  |
+    |                  the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+110 |     fn pool(env: &Env) -> pool::Client<'_> {
+    |                                       ++++
+
+warning: `test-protection-pool` (lib) generated 1 warning (run `cargo fix --lib -p test-protection-pool` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 22.80s
+ℹ️  Build Summary:
+    Wasm File: /tmp/tmptkkbta5okomet_test-protection-pool/test_protection_pool.wasm (4005 bytes)
+    Wasm Hash: 63cc0fea5ee68aacf9bf189f602ce9f18eff623a8ab4e1bdf88b1c8152ed59f5
+    Wasm Size: 4005 bytes
+    Exported Functions: 4 found
+      • init
+      • test_solvency_invariant
+      • test_stake_accounting_is_exact
+      • test_totals_never_negative
+✅ Build Complete
+
+ℹ️  Loading contract spec from file...
+stellar-shim: renamed 5 input type fields
+Processing contract: test_protection_pool
+Discovered 3 test functions:
+
+test_solvency_invariant        ━━━━━━━━━━━━━━━━━━━━━━━━━━ 100/100 0:00:20 Passed
+test_totals_never_negative     ━━━━━━━━━━━━━━━━━━━━━━━━━━ 100/100 0:00:19 Passed
+test_stake_accounting_is_exact ━━━━━━━━━━━━━━━━━━━━━━━━━━ 100/100 0:00:20 Passed
+=== KOMET TEST EXIT: 0 ===
+=== KOMET PROVE START 2026-09-01T08:59:59Z ===
+stellar-shim: adding --optimize=false (pykwasm is MVP-only, rejects DataCount 0xc)
+ℹ️  CARGO_BUILD_RUSTFLAGS=--remap-path-prefix=/home/komet/.cargo/registry/src= SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo rustc --manifest-path=Cargo.toml --crate-type=cdylib --target=wasm32v1-none --release
+    Updating crates.io index
+     Locking 207 packages to latest compatible versions
+      Adding crypto-common v0.1.6 (available: v0.1.7)
+ Downloading crates ...
+  Downloaded ark-bn254 v0.5.0
+  Downloaded ahash v0.8.12
+  Downloaded ark-ec v0.5.0
+  Downloaded keccak v0.1.6
+  Downloaded jiff-tzdb v0.1.8
+  Downloaded rand_chacha v0.3.1
+  Downloaded rustc_version v0.4.1
+  Downloaded log v0.4.34
+  Downloaded subtle v2.6.1
+  Downloaded wasmi_arena v0.4.1
+  Downloaded p256 v0.13.2
+  Downloaded zeroize_derive v1.5.0
+  Downloaded time-core v0.1.9
+  Downloaded tinyvec_macros v0.1.1
+  Downloaded data-encoding v2.11.1
+  Downloaded strsim v0.11.1
+  Downloaded visibility v0.1.1
+  Downloaded signature v2.2.0
+  Downloaded memchr v2.8.3
+  Downloaded zmij v1.0.23
+  Downloaded time-macros v0.2.32
+  Downloaded unicode-ident v1.0.24
+  Downloaded serde_derive v1.0.229
+  Downloaded tinyvec v1.12.0
+  Downloaded typenum v1.20.1
+  Downloaded schemars v1.2.2
+  Downloaded wasmparser-nostd v0.100.2
+  Downloaded serde v1.0.229
+  Downloaded wasmparser v0.116.1
+  Downloaded soroban-sdk v27.0.6
+  Downloaded curve25519-dalek v4.1.3
+  Downloaded serde_with v3.22.0
+  Downloaded serde_json v1.0.151
+  Downloaded rand v0.8.8
+  Downloaded zerocopy v0.8.56
+  Downloaded syn v3.0.4
+  Downloaded syn v2.0.119
+  Downloaded time v0.3.55
+  Downloaded curve25519-dalek v5.0.0
+  Downloaded schemars v0.9.0
+  Downloaded schemars v0.8.22
+  Downloaded proc-macro2 v1.0.107
+  Downloaded prettyplease v0.2.37
+  Downloaded hashbrown v0.17.1
+  Downloaded hashbrown v0.15.5
+  Downloaded serde_core v1.0.229
+  Downloaded jiff-core v0.1.0
+  Downloaded thiserror v1.0.69
+  Downloaded stellar-strkey v0.0.16
+  Downloaded spin v0.9.9
+  Downloaded soroban-env-common v27.0.1
+  Downloaded smallvec v1.15.2
+  Downloaded semver v1.0.28
+  Downloaded soroban-env-host v27.0.1
+  Downloaded rand_core v0.6.4
+  Downloaded quote v1.0.47
+  Downloaded primeorder v0.13.6
+  Downloaded ppv-lite86 v0.2.21
+  Downloaded libc v0.2.189
+  Downloaded pkcs8 v0.10.2
+  Downloaded crypto-bigint v0.5.5
+  Downloaded zeroize v1.9.0
+  Downloaded wasmi_core v0.13.0
+  Downloaded thiserror-impl v2.0.20
+  Downloaded thiserror-impl v1.0.69
+  Downloaded thiserror v2.0.20
+  Downloaded stellar-strkey v0.0.13
+  Downloaded sha3 v0.10.9
+  Downloaded static_assertions v1.1.0
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded spki v0.7.3
+  Downloaded soroban-env-macros v27.0.1
+  Downloaded ref-cast-impl v1.0.27
+  Downloaded ref-cast v1.0.27
+  Downloaded num-bigint v0.4.8
+  Downloaded hashbrown v0.12.3
+  Downloaded ethnum v1.5.3
+  Downloaded ed25519-dalek v2.2.0
+  Downloaded der v0.7.10
+  Downloaded darling_core v0.20.11
+  Downloaded jiff v0.2.35
+  Downloaded heapless v0.8.0
+  Downloaded darling_core v0.23.0
+  Downloaded base64 v0.22.1
+  Downloaded stellar-xdr v27.0.0
+  Downloaded elliptic-curve v0.13.8
+  Downloaded either v1.18.0
+  Downloaded deranged v0.5.8
+  Downloaded defmt v1.1.1
+  Downloaded powerfmt v0.2.0
+  Downloaded num-derive v0.4.2
+  Downloaded educe v0.6.0
+  Downloaded ed25519 v2.2.3
+  Downloaded digest v0.10.7
+  Downloaded defmt-macros v1.1.1
+  Downloaded darling v0.23.0
+  Downloaded byteorder v1.5.0
+  Downloaded base64ct v1.8.3
+  Downloaded soroban-spec-rust v27.0.6
+  Downloaded rfc6979 v0.4.0
+  Downloaded group v0.13.0
+  Downloaded generic-array v0.14.9
+  Downloaded enum-ordinalize-derive v4.4.2
+  Downloaded ecdsa v0.16.9
+  Downloaded digest v0.11.3
+  Downloaded crypto-common v0.2.2
+  Downloaded crypto-common v0.1.6
+  Downloaded cfg-if v1.0.4
+  Downloaded ark-std v0.5.0
+  Downloaded indexmap-nostd v0.4.0
+  Downloaded hash32 v0.3.1
+  Downloaded ff v0.13.1
+  Downloaded escape-bytes v0.1.1
+  Downloaded darling_macro v0.23.0
+  Downloaded crate-git-revision v0.0.6
+  Downloaded soroban-spec v27.0.6
+  Downloaded hex v0.4.3
+  Downloaded equivalent v1.0.2
+  Downloaded enum-ordinalize v4.4.2
+  Downloaded defmt-parser v1.0.0
+  Downloaded darling_macro v0.20.11
+  Downloaded darling v0.20.11
+  Downloaded curve25519-dalek-derive v0.1.1
+  Downloaded crate-git-revision v0.0.9
+  Downloaded cpufeatures v0.2.17
+  Downloaded chrono v0.4.45
+  Downloaded cfg_eval v0.1.2
+  Downloaded bytes-lit v0.0.6
+  Downloaded bs58 v0.5.1
+  Downloaded autocfg v1.5.1
+  Downloaded ark-poly v0.5.0
+  Downloaded ark-ff-asm v0.5.0
+  Downloaded version_check v0.9.5
+  Downloaded soroban-wasmi v0.31.1-soroban.20.0.1
+  Downloaded soroban-sdk-macros v27.0.6
+  Downloaded soroban-env-guest v27.0.1
+  Downloaded soroban-builtin-sdk-macros v27.0.1
+  Downloaded sha2 v0.10.9
+  Downloaded num-conv v0.2.2
+  Downloaded macro-string v0.1.4
+  Downloaded hmac v0.12.1
+  Downloaded heck v0.5.0
+  Downloaded fnv v1.0.7
+  Downloaded downcast-rs v1.2.1
+  Downloaded block-buffer v0.10.4
+  Downloaded libm v0.2.16
+  Downloaded itertools v0.13.0
+  Downloaded serde_with_macros v3.22.0
+  Downloaded sec1 v0.7.3
+  Downloaded once_cell v1.21.4
+  Downloaded num-integer v0.1.47
+  Downloaded ark-ff v0.5.0
+  Downloaded paste v1.0.15
+  Downloaded k256 v0.13.4
+  Downloaded indexmap v2.14.1
+  Downloaded hybrid-array v0.4.14
+  Downloaded getrandom v0.2.17
+  Downloaded const-oid v0.9.6
+  Downloaded ark-serialize v0.5.0
+  Downloaded ident_case v1.0.1
+  Downloaded dyn-clone v1.0.20
+  Downloaded num-traits v0.2.19
+  Downloaded jiff-tzdb-platform v0.1.3
+  Downloaded indexmap v1.9.3
+  Downloaded hex-literal v0.4.1
+  Downloaded cpufeatures v0.3.1
+  Downloaded base16ct v0.2.0
+  Downloaded block-buffer v0.12.1
+  Downloaded bitflags v1.3.2
+  Downloaded arrayvec v0.7.8
+  Downloaded ark-serialize-derive v0.5.0
+  Downloaded ark-ff-macros v0.5.0
+  Downloaded ark-bls12-381 v0.5.0
+  Downloaded itoa v1.0.18
+  Downloaded iana-time-zone v0.1.65
+  Downloaded allocator-api2 v0.2.21
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.151
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling ident_case v1.0.1
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling strsim v0.11.1
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.9
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling serde_derive v1.0.229
+   Compiling schemars v0.8.22
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling dyn-clone v1.0.20
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.4
+   Compiling darling_core v0.23.0
+   Compiling data-encoding v2.11.1
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling escape-bytes v0.1.1
+   Compiling ethnum v1.5.3
+   Compiling cfg_eval v0.1.2
+   Compiling num-traits v0.2.19
+   Compiling semver v1.0.28
+   Compiling either v1.18.0
+   Compiling itertools v0.13.0
+   Compiling crate-git-revision v0.0.6
+   Compiling darling_macro v0.23.0
+   Compiling stellar-strkey v0.0.13
+   Compiling stellar-xdr v27.0.0
+   Compiling darling v0.23.0
+   Compiling serde_with_macros v3.22.0
+   Compiling hex v0.4.3
+   Compiling soroban-env-common v27.0.1
+   Compiling hashbrown v0.17.1
+   Compiling thiserror v1.0.69
+   Compiling equivalent v1.0.2
+   Compiling serde_with v3.22.0
+   Compiling num-derive v0.4.2
+   Compiling indexmap v2.14.1
+   Compiling thiserror-impl v1.0.69
+   Compiling fnv v1.0.7
+   Compiling prettyplease v0.2.37
+   Compiling darling_core v0.20.11
+   Compiling wasmparser v0.116.1
+   Compiling base64 v0.22.1
+   Compiling heapless v0.8.0
+   Compiling byteorder v1.5.0
+   Compiling darling_macro v0.20.11
+   Compiling hash32 v0.3.1
+   Compiling stellar-strkey v0.0.16
+   Compiling num-integer v0.1.47
+   Compiling crate-git-revision v0.0.9
+   Compiling rustc_version v0.4.1
+   Compiling static_assertions v1.1.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling soroban-sdk v27.0.6
+   Compiling num-bigint v0.4.8
+   Compiling darling v0.20.11
+   Compiling macro-string v0.1.4
+   Compiling heck v0.5.0
+   Compiling visibility v0.1.1
+   Compiling bytes-lit v0.0.6
+   Compiling soroban-spec v27.0.6
+   Compiling soroban-spec-rust v27.0.6
+   Compiling soroban-env-macros v27.0.1
+   Compiling soroban-env-guest v27.0.1
+   Compiling soroban-sdk-macros v27.0.6
+   Compiling komet-harness v0.1.0 (/work/contracts/komet-harness)
+warning: constant `SECONDS_PER_DAY` is never used
+  --> src/../../protection-pool/src/types.rs:33:11
+   |
+33 | pub const SECONDS_PER_DAY: u64 = 86_400;
+   |           ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `CLAIM_WINDOW_SECONDS` is never used
+  --> src/../../protection-pool/src/types.rs:37:11
+   |
+37 | pub const CLAIM_WINDOW_SECONDS: u64 = 30 * SECONDS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BPS_DENOMINATOR` is never used
+  --> src/../../protection-pool/src/types.rs:41:11
+   |
+41 | pub const BPS_DENOMINATOR: i128 = 10_000;
+   |           ^^^^^^^^^^^^^^^
+
+warning: constant `TIME_GATE_LEDGERS` is never used
+  --> src/../../protection-pool/src/types.rs:44:11
+   |
+44 | pub const TIME_GATE_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `COOLDOWN_LEDGERS` is never used
+  --> src/../../protection-pool/src/types.rs:46:11
+   |
+46 | pub const COOLDOWN_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^^
+
+warning: constant `VESTING_LEDGERS` is never used
+  --> src/../../protection-pool/src/types.rs:48:11
+   |
+48 | pub const VESTING_LEDGERS: u32 = 45 * LEDGERS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^
+
+warning: constant `PENALTY_LOCK_LEDGERS` is never used
+  --> src/../../protection-pool/src/types.rs:51:11
+   |
+51 | pub const PENALTY_LOCK_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `APPROVE_WINDOW_LEDGERS` is never used
+   --> src/../../protection-pool/src/types.rs:108:11
+    |
+108 | pub const APPROVE_WINDOW_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
+    |           ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `COLLECTION_INACTIVITY_LEDGERS` is never used
+   --> src/../../protection-pool/src/types.rs:119:11
+    |
+119 | pub const COLLECTION_INACTIVITY_LEDGERS: u32 = 100 * LEDGERS_PER_DAY;
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_DEPLOY_BPS` is never used
+   --> src/../../protection-pool/src/types.rs:153:11
+    |
+153 | pub const MAX_DEPLOY_BPS: i128 = 8_000;
+    |           ^^^^^^^^^^^^^^
+
+warning: constant `DEPLOY_BPS_DENOMINATOR` is never used
+   --> src/../../protection-pool/src/types.rs:161:11
+    |
+161 | pub const DEPLOY_BPS_DENOMINATOR: i128 = 10_000;
+    |           ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_REBALANCE_SLIPPAGE_BPS` is never used
+   --> src/../../protection-pool/src/types.rs:169:11
+    |
+169 | pub const MAX_REBALANCE_SLIPPAGE_BPS: i128 = 500;
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TIER_A_RATIO` is never used
+   --> src/../../protection-pool/src/types.rs:204:11
+    |
+204 | pub const TIER_A_RATIO: i128 = 15;
+    |           ^^^^^^^^^^^^
+
+warning: constant `TIER_B_RATIO` is never used
+   --> src/../../protection-pool/src/types.rs:205:11
+    |
+205 | pub const TIER_B_RATIO: i128 = 10;
+    |           ^^^^^^^^^^^^
+
+warning: constant `TIER_C_RATIO` is never used
+   --> src/../../protection-pool/src/types.rs:206:11
+    |
+206 | pub const TIER_C_RATIO: i128 = 5;
+    |           ^^^^^^^^^^^^
+
+warning: constant `TIER_COVERAGE_BPS` is never used
+   --> src/../../protection-pool/src/types.rs:207:11
+    |
+207 | pub const TIER_COVERAGE_BPS: i128 = 10_000; // 100% of ratio, admin-adjustable
+    |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `TIER_BPS_DENOMINATOR` is never used
+   --> src/../../protection-pool/src/types.rs:208:11
+    |
+208 | pub const TIER_BPS_DENOMINATOR: i128 = 10_000;
+    |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_oracle_pubkey` is never used
+   --> src/../../protection-pool/src/storage.rs:143:8
+    |
+143 | pub fn get_oracle_pubkey(env: &Env) -> Option<BytesN<32>> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `get_daily_outflow` is never used
+   --> src/../../protection-pool/src/storage.rs:243:8
+    |
+243 | pub fn get_daily_outflow(env: &Env, current_day: u32) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `set_daily_outflow` is never used
+   --> src/../../protection-pool/src/storage.rs:259:8
+    |
+259 | pub fn set_daily_outflow(env: &Env, current_day: u32, value: i128) {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `get_daily_entitlement` is never used
+   --> src/../../protection-pool/src/storage.rs:271:8
+    |
+271 | pub fn get_daily_entitlement(env: &Env, current_day: u32) -> (i128, u32) {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_daily_entitlement` is never used
+   --> src/../../protection-pool/src/storage.rs:294:8
+    |
+294 | pub fn set_daily_entitlement(env: &Env, current_day: u32, total: i128, count: u32) {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_vault` is never used
+   --> src/../../protection-pool/src/storage.rs:312:8
+    |
+312 | pub fn get_vault(env: &Env) -> Option<Address> {
+    |        ^^^^^^^^^
+
+warning: function `set_vault` is never used
+   --> src/../../protection-pool/src/storage.rs:316:8
+    |
+316 | pub fn set_vault(env: &Env, vault: &Address) {
+    |        ^^^^^^^^^
+
+warning: function `get_treasury` is never used
+   --> src/../../protection-pool/src/storage.rs:320:8
+    |
+320 | pub fn get_treasury(env: &Env) -> Option<Address> {
+    |        ^^^^^^^^^^^^
+
+warning: function `set_treasury` is never used
+   --> src/../../protection-pool/src/storage.rs:324:8
+    |
+324 | pub fn set_treasury(env: &Env, treasury: &Address) {
+    |        ^^^^^^^^^^^^
+
+warning: function `get_deploy_bps` is never used
+   --> src/../../protection-pool/src/storage.rs:329:8
+    |
+329 | pub fn get_deploy_bps(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^
+
+warning: function `set_deploy_bps` is never used
+   --> src/../../protection-pool/src/storage.rs:336:8
+    |
+336 | pub fn set_deploy_bps(env: &Env, value: i128) {
+    |        ^^^^^^^^^^^^^^
+
+warning: function `get_total_deployed_shares` is never used
+   --> src/../../protection-pool/src/storage.rs:340:8
+    |
+340 | pub fn get_total_deployed_shares(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_total_deployed_shares` is never used
+   --> src/../../protection-pool/src/storage.rs:347:8
+    |
+347 | pub fn set_total_deployed_shares(env: &Env, value: i128) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_total_deployed_xlm` is never used
+   --> src/../../protection-pool/src/storage.rs:353:8
+    |
+353 | pub fn get_total_deployed_xlm(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_total_deployed_xlm` is never used
+   --> src/../../protection-pool/src/storage.rs:360:8
+    |
+360 | pub fn set_total_deployed_xlm(env: &Env, value: i128) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_total_extracted_yield` is never used
+   --> src/../../protection-pool/src/storage.rs:366:8
+    |
+366 | pub fn get_total_extracted_yield(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_total_extracted_yield` is never used
+   --> src/../../protection-pool/src/storage.rs:373:8
+    |
+373 | pub fn set_total_extracted_yield(env: &Env, value: i128) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_claim` is never used
+   --> src/../../protection-pool/src/storage.rs:407:8
+    |
+407 | pub fn get_claim(env: &Env, claim_id: &BytesN<32>) -> Option<Claim> {
+    |        ^^^^^^^^^
+
+warning: function `set_claim` is never used
+   --> src/../../protection-pool/src/storage.rs:413:8
+    |
+413 | pub fn set_claim(env: &Env, claim_id: &BytesN<32>, claim: &Claim) {
+    |        ^^^^^^^^^
+
+warning: function `get_override` is never used
+   --> src/../../protection-pool/src/storage.rs:425:8
+    |
+425 | pub fn get_override(env: &Env, claim_id: &BytesN<32>) -> Option<OverrideRequest> {
+    |        ^^^^^^^^^^^^
+
+warning: function `set_override` is never used
+   --> src/../../protection-pool/src/storage.rs:431:8
+    |
+431 | pub fn set_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) {
+    |        ^^^^^^^^^^^^
+
+warning: function `remove_override` is never used
+   --> src/../../protection-pool/src/storage.rs:443:8
+    |
+443 | pub fn remove_override(env: &Env, claim_id: &BytesN<32>) {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `is_approval_revoked` is never used
+   --> src/../../protection-pool/src/storage.rs:478:8
+    |
+478 | pub fn is_approval_revoked(env: &Env, approval_hash: &BytesN<32>) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_approval_revoked` is never used
+   --> src/../../protection-pool/src/storage.rs:484:8
+    |
+484 | pub fn set_approval_revoked(env: &Env, approval_hash: &BytesN<32>) {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `transfer_admin` is never used
+  --> src/../../protection-pool/src/admin.rs:96:8
+   |
+96 | pub fn transfer_admin(env: &Env, new_admin: &Address) -> Result<(), PoolError> {
+   |        ^^^^^^^^^^^^^^
+
+warning: function `pause` is never used
+   --> src/../../protection-pool/src/admin.rs:114:8
+    |
+114 | pub fn pause(env: &Env) {
+    |        ^^^^^
+
+warning: function `unpause` is never used
+   --> src/../../protection-pool/src/admin.rs:120:8
+    |
+120 | pub fn unpause(env: &Env) {
+    |        ^^^^^^^
+
+warning: function `suspend_stake` is never used
+   --> src/../../protection-pool/src/admin.rs:149:8
+    |
+149 | pub fn suspend_stake(env: &Env, wallet: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `unsuspend_stake` is never used
+   --> src/../../protection-pool/src/admin.rs:186:8
+    |
+186 | pub fn unsuspend_stake(
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `set_pool_cap` is never used
+   --> src/../../protection-pool/src/admin.rs:224:8
+    |
+224 | pub fn set_pool_cap(env: &Env, new_cap: i128) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^
+
+warning: function `set_oracle` is never used
+   --> src/../../protection-pool/src/admin.rs:242:8
+    |
+242 | pub fn set_oracle(env: &Env, new_oracle: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^
+
+warning: function `set_oracle_pubkey` is never used
+   --> src/../../protection-pool/src/admin.rs:273:8
+    |
+273 | pub fn set_oracle_pubkey(env: &Env, new_pubkey: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `set_oracle_identity` is never used
+   --> src/../../protection-pool/src/admin.rs:313:8
+    |
+313 | pub fn set_oracle_identity(
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_co_signer` is never used
+   --> src/../../protection-pool/src/admin.rs:332:8
+    |
+332 | pub fn set_co_signer(env: &Env, new_co_signer: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^
+
+warning: struct `Deployed` is never constructed
+   --> src/../../protection-pool/src/vault.rs:103:12
+    |
+103 | pub struct Deployed {
+    |            ^^^^^^^^
+
+warning: struct `LiquidityProvided` is never constructed
+   --> src/../../protection-pool/src/vault.rs:111:12
+    |
+111 | pub struct LiquidityProvided {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `LiquidityAutoRebalanced` is never constructed
+   --> src/../../protection-pool/src/vault.rs:122:12
+    |
+122 | pub struct LiquidityAutoRebalanced {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `LiquidityAutoDeployed` is never constructed
+   --> src/../../protection-pool/src/vault.rs:132:12
+    |
+132 | pub struct LiquidityAutoDeployed {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `YieldExtracted` is never constructed
+   --> src/../../protection-pool/src/vault.rs:140:12
+    |
+140 | pub struct YieldExtracted {
+    |            ^^^^^^^^^^^^^^
+
+warning: struct `YieldWithdrawn` is never constructed
+   --> src/../../protection-pool/src/vault.rs:149:12
+    |
+149 | pub struct YieldWithdrawn {
+    |            ^^^^^^^^^^^^^^
+
+warning: struct `DeploymentShortfall` is never constructed
+   --> src/../../protection-pool/src/vault.rs:166:12
+    |
+166 | pub struct DeploymentShortfall {
+    |            ^^^^^^^^^^^^^^^^^^^
+
+warning: function `yield_balance` is never used
+   --> src/../../protection-pool/src/vault.rs:220:8
+    |
+220 | pub fn yield_balance(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^
+
+warning: function `deployment_ratio_bps` is never used
+   --> src/../../protection-pool/src/vault.rs:239:8
+    |
+239 | pub fn deployment_ratio_bps(env: &Env) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_vault` is never used
+   --> src/../../protection-pool/src/vault.rs:256:8
+    |
+256 | pub fn set_vault(env: &Env, vault: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^
+
+warning: function `set_treasury` is never used
+   --> src/../../protection-pool/src/vault.rs:268:8
+    |
+268 | pub fn set_treasury(env: &Env, treasury: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^
+
+warning: function `set_deploy_bps` is never used
+   --> src/../../protection-pool/src/vault.rs:290:8
+    |
+290 | pub fn set_deploy_bps(env: &Env, bps: i128) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^
+
+warning: function `authorize_deposit` is never used
+   --> src/../../protection-pool/src/vault.rs:354:4
+    |
+354 | fn authorize_deposit(
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `authorize_withdraw` is never used
+   --> src/../../protection-pool/src/vault.rs:417:4
+    |
+417 | fn authorize_withdraw(env: &Env, vault_addr: &Address, shares: i128, mins: &Vec<i128>) {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `deploy_to_vault` is never used
+   --> src/../../protection-pool/src/vault.rs:441:8
+    |
+441 | pub fn deploy_to_vault(
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `auto_deploy_liquidity` is never used
+   --> src/../../protection-pool/src/vault.rs:530:8
+    |
+530 | pub fn auto_deploy_liquidity(env: &Env) -> Result<i128, PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `redeem` is never used
+   --> src/../../protection-pool/src/vault.rs:620:4
+    |
+620 | fn redeem(
+    |    ^^^^^^
+
+warning: function `provide_liquidity` is never used
+   --> src/../../protection-pool/src/vault.rs:695:8
+    |
+695 | pub fn provide_liquidity(
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `ensure_liquidity` is never used
+   --> src/../../protection-pool/src/vault.rs:731:8
+    |
+731 | pub fn ensure_liquidity(env: &Env) -> Result<i128, PoolError> {
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `extract_yield` is never used
+   --> src/../../protection-pool/src/vault.rs:806:8
+    |
+806 | pub fn extract_yield(env: &Env, shares: i128, min_xlm_out: i128) -> Result<i128, PoolError> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `withdraw_yield` is never used
+   --> src/../../protection-pool/src/vault.rs:850:8
+    |
+850 | pub fn withdraw_yield(env: &Env, amount: i128) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^
+
+warning: struct `EmergencyExit` is never constructed
+  --> src/../../protection-pool/src/stake.rs:55:12
+   |
+55 | pub struct EmergencyExit {
+   |            ^^^^^^^^^^^^^
+
+warning: function `set_beneficiary` is never used
+   --> src/../../protection-pool/src/stake.rs:197:8
+    |
+197 | pub fn set_beneficiary(
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `emergency_exit` is never used
+   --> src/../../protection-pool/src/stake.rs:299:8
+    |
+299 | pub fn emergency_exit(env: &Env, staker: &Address) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^
+
+warning: constant `APPROVAL_DOMAIN` is never used
+  --> src/../../protection-pool/src/claim.rs:64:7
+   |
+64 | const APPROVAL_DOMAIN: &str = "SAFU_CLAIM_APPROVAL_SOROBAN";
+   |       ^^^^^^^^^^^^^^^
+
+warning: struct `ClaimSubmitted` is never constructed
+  --> src/../../protection-pool/src/claim.rs:71:12
+   |
+71 | pub struct ClaimSubmitted {
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `ClaimQueued` is never constructed
+  --> src/../../protection-pool/src/claim.rs:83:12
+   |
+83 | pub struct ClaimQueued {
+   |            ^^^^^^^^^^^
+
+warning: struct `ClaimQueueReleased` is never constructed
+  --> src/../../protection-pool/src/claim.rs:92:12
+   |
+92 | pub struct ClaimQueueReleased {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `ClaimQueueExpired` is never constructed
+   --> src/../../protection-pool/src/claim.rs:100:12
+    |
+100 | pub struct ClaimQueueExpired {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `ClaimUnlocked` is never constructed
+   --> src/../../protection-pool/src/claim.rs:107:12
+    |
+107 | pub struct ClaimUnlocked {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `ClaimApproved` is never constructed
+   --> src/../../protection-pool/src/claim.rs:116:12
+    |
+116 | pub struct ClaimApproved {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `ClaimExpired` is never constructed
+   --> src/../../protection-pool/src/claim.rs:127:12
+    |
+127 | pub struct ClaimExpired {
+    |            ^^^^^^^^^^^^
+
+warning: struct `ClaimStreamed` is never constructed
+   --> src/../../protection-pool/src/claim.rs:135:12
+    |
+135 | pub struct ClaimStreamed {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `ClaimCancelled` is never constructed
+   --> src/../../protection-pool/src/claim.rs:142:12
+    |
+142 | pub struct ClaimCancelled {
+    |            ^^^^^^^^^^^^^^
+
+warning: struct `OverrideExecuted` is never constructed
+   --> src/../../protection-pool/src/claim.rs:152:12
+    |
+152 | pub struct OverrideExecuted {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: struct `OverrideCancelled` is never constructed
+   --> src/../../protection-pool/src/claim.rs:160:12
+    |
+160 | pub struct OverrideCancelled {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `ApprovalRevoked` is never constructed
+   --> src/../../protection-pool/src/claim.rs:169:12
+    |
+169 | pub struct ApprovalRevoked {
+    |            ^^^^^^^^^^^^^^^
+
+warning: function `tier_ratio` is never used
+   --> src/../../protection-pool/src/claim.rs:179:4
+    |
+179 | fn tier_ratio(tier: u32) -> Result<i128, PoolError> {
+    |    ^^^^^^^^^^
+
+warning: function `tier_cap` is never used
+   --> src/../../protection-pool/src/claim.rs:190:8
+    |
+190 | pub fn tier_cap(stake_amount: i128, tier: u32) -> Result<i128, PoolError> {
+    |        ^^^^^^^^
+
+warning: function `stress_cap` is never used
+   --> src/../../protection-pool/src/claim.rs:196:8
+    |
+196 | pub fn stress_cap(env: &Env) -> i128 {
+    |        ^^^^^^^^^^
+
+warning: function `dynamic_outflow_bps` is never used
+   --> src/../../protection-pool/src/claim.rs:217:8
+    |
+217 | pub fn dynamic_outflow_bps(env: &Env, base: i128) -> i128 {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `current_day` is never used
+   --> src/../../protection-pool/src/claim.rs:232:4
+    |
+232 | fn current_day(env: &Env) -> u32 {
+    |    ^^^^^^^^^^^
+
+warning: function `compute_claim_id` is never used
+   --> src/../../protection-pool/src/claim.rs:238:4
+    |
+238 | fn compute_claim_id(env: &Env, wallet: &Address, tx_hash: &BytesN<32>) -> BytesN<32> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `build_approval_payload` is never used
+   --> src/../../protection-pool/src/claim.rs:275:8
+    |
+275 | pub fn build_approval_payload(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `approval_hash` is never used
+   --> src/../../protection-pool/src/claim.rs:300:4
+    |
+300 | fn approval_hash(env: &Env, payload: &Bytes) -> BytesN<32> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `verify_oracle_signature` is never used
+   --> src/../../protection-pool/src/claim.rs:321:4
+    |
+321 | fn verify_oracle_signature(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `activate_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:390:4
+    |
+390 | fn activate_claim(env: &Env, stake_record: &mut StakeRecord, claim: &mut Claim) -> i128 {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `admit_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:444:4
+    |
+444 | fn admit_claim(
+    |    ^^^^^^^^^^^
+
+warning: function `submit_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:544:8
+    |
+544 | pub fn submit_claim(
+    |        ^^^^^^^^^^^^
+
+warning: function `try_release_queued_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:743:8
+    |
+743 | pub fn try_release_queued_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `expire_queued_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:809:8
+    |
+809 | pub fn expire_queued_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `unlock_pending_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:849:8
+    |
+849 | pub fn unlock_pending_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `approve_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:889:8
+    |
+889 | pub fn approve_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `expire_pending_approval` is never used
+   --> src/../../protection-pool/src/claim.rs:934:8
+    |
+934 | pub fn expire_pending_approval(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `expire_stale_claim` is never used
+   --> src/../../protection-pool/src/claim.rs:987:8
+    |
+987 | pub fn expire_stale_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `claim_stream` is never used
+    --> src/../../protection-pool/src/claim.rs:1035:8
+     |
+1035 | pub fn claim_stream(
+     |        ^^^^^^^^^^^^
+
+warning: function `cancel_claim` is never used
+    --> src/../../protection-pool/src/claim.rs:1141:8
+     |
+1141 | pub fn cancel_claim(env: &Env, claim_id: &BytesN<32>) -> Result<(), PoolError> {
+     |        ^^^^^^^^^^^^
+
+warning: function `approve_override` is never used
+    --> src/../../protection-pool/src/claim.rs:1204:8
+     |
+1204 | pub fn approve_override(
+     |        ^^^^^^^^^^^^^^^^
+
+warning: function `execute_override` is never used
+    --> src/../../protection-pool/src/claim.rs:1275:4
+     |
+1275 | fn execute_override(env: &Env, claim_id: &BytesN<32>, req: &OverrideRequest) -> Result<(), PoolError> {
+     |    ^^^^^^^^^^^^^^^^
+
+warning: function `cancel_pending_override` is never used
+    --> src/../../protection-pool/src/claim.rs:1439:8
+     |
+1439 | pub fn cancel_pending_override(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `revoke_approval` is never used
+    --> src/../../protection-pool/src/claim.rs:1489:8
+     |
+1489 | pub fn revoke_approval(
+     |        ^^^^^^^^^^^^^^^
+
+warning: `komet-harness` (lib) generated 112 warnings
+    Finished `release` profile [optimized] target(s) in 24.04s
+ℹ️  Build Summary:
+    Wasm File: /tmp/tmphxzfukb1komet_komet-harness/komet_harness.wasm (32670 bytes)
+    Wasm Hash: 3a6d77f2d3dd6052762999326f7418f2d82f0fe8de8248745889a30ca4285a61
+    Wasm Size: 32670 bytes
+    Exported Functions: 6 found
+      • get_total_allocated
+      • get_total_staked
+      • get_total_stakers
+      • komet_init
+      • stake
+      • withdraw
+✅ Build Complete
+
+stellar-shim: adding --optimize=false (pykwasm is MVP-only, rejects DataCount 0xc)
+ℹ️  CARGO_BUILD_RUSTFLAGS=--remap-path-prefix=/home/komet/.cargo/registry/src= SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo rustc --manifest-path=Cargo.toml --crate-type=cdylib --target=wasm32v1-none --release
+    Updating crates.io index
+     Locking 207 packages to latest compatible versions
+      Adding crypto-common v0.1.6 (available: v0.1.7)
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.151
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling ident_case v1.0.1
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling strsim v0.11.1
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.9
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling serde_derive v1.0.229
+   Compiling schemars v0.8.22
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling dyn-clone v1.0.20
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.4
+   Compiling data-encoding v2.11.1
+   Compiling darling_core v0.23.0
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling ethnum v1.5.3
+   Compiling cfg_eval v0.1.2
+   Compiling escape-bytes v0.1.1
+   Compiling num-traits v0.2.19
+   Compiling semver v1.0.28
+   Compiling either v1.18.0
+   Compiling itertools v0.13.0
+   Compiling darling_macro v0.23.0
+   Compiling hashbrown v0.17.1
+   Compiling crate-git-revision v0.0.6
+   Compiling darling v0.23.0
+   Compiling serde_with_macros v3.22.0
+   Compiling stellar-strkey v0.0.13
+   Compiling stellar-xdr v27.0.0
+   Compiling hex v0.4.3
+   Compiling soroban-env-common v27.0.1
+   Compiling thiserror v1.0.69
+   Compiling equivalent v1.0.2
+   Compiling indexmap v2.14.1
+   Compiling thiserror-impl v1.0.69
+   Compiling serde_with v3.22.0
+   Compiling num-derive v0.4.2
+   Compiling prettyplease v0.2.37
+   Compiling fnv v1.0.7
+   Compiling darling_core v0.20.11
+   Compiling wasmparser v0.116.1
+   Compiling base64 v0.22.1
+   Compiling byteorder v1.5.0
+   Compiling heapless v0.8.0
+   Compiling hash32 v0.3.1
+   Compiling darling_macro v0.20.11
+   Compiling stellar-strkey v0.0.16
+   Compiling crate-git-revision v0.0.9
+   Compiling num-integer v0.1.47
+   Compiling rustc_version v0.4.1
+   Compiling static_assertions v1.1.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling soroban-sdk v27.0.6
+   Compiling num-bigint v0.4.8
+   Compiling darling v0.20.11
+   Compiling macro-string v0.1.4
+   Compiling heck v0.5.0
+   Compiling visibility v0.1.1
+   Compiling bytes-lit v0.0.6
+   Compiling soroban-spec v27.0.6
+   Compiling soroban-spec-rust v27.0.6
+   Compiling soroban-env-macros v27.0.1
+   Compiling soroban-env-guest v27.0.1
+   Compiling soroban-sdk-macros v27.0.6
+   Compiling komet-mock-token v0.1.0 (/work/contracts/komet-mock-token)
+    Finished `release` profile [optimized] target(s) in 23.08s
+ℹ️  Build Summary:
+    Wasm File: /tmp/tmpf003tpolkomet_komet-mock-token/komet_mock_token.wasm (2344 bytes)
+    Wasm Hash: 82df6486d88ab54913989a59c24df3a24829f86d25f065b6b64087b489f29676
+    Wasm Size: 2344 bytes
+    Exported Functions: 3 found
+      • balance
+      • mint
+      • transfer
+✅ Build Complete
+
+stellar-shim: adding --optimize=false (pykwasm is MVP-only, rejects DataCount 0xc)
+ℹ️  CARGO_BUILD_RUSTFLAGS=--remap-path-prefix=/home/komet/.cargo/registry/src= SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo rustc --manifest-path=Cargo.toml --crate-type=cdylib --target=wasm32v1-none --release
+    Updating crates.io index
+     Locking 207 packages to latest compatible versions
+      Adding crypto-common v0.1.6 (available: v0.1.7)
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling strsim v0.11.1
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling ident_case v1.0.1
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.9
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling schemars v0.8.22
+   Compiling serde_derive v1.0.229
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling dyn-clone v1.0.20
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.4
+   Compiling data-encoding v2.11.1
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling darling_core v0.23.0
+   Compiling ethnum v1.5.3
+   Compiling escape-bytes v0.1.1
+   Compiling num-traits v0.2.19
+   Compiling semver v1.0.28
+   Compiling cfg_eval v0.1.2
+   Compiling either v1.18.0
+   Compiling itertools v0.13.0
+   Compiling thiserror v1.0.69
+   Compiling hashbrown v0.17.1
+   Compiling crate-git-revision v0.0.6
+   Compiling darling_macro v0.23.0
+   Compiling stellar-strkey v0.0.13
+   Compiling stellar-xdr v27.0.0
+   Compiling darling v0.23.0
+   Compiling serde_with_macros v3.22.0
+   Compiling hex v0.4.3
+   Compiling soroban-env-common v27.0.1
+   Compiling equivalent v1.0.2
+   Compiling indexmap v2.14.1
+   Compiling num-derive v0.4.2
+   Compiling serde_with v3.22.0
+   Compiling thiserror-impl v1.0.69
+   Compiling prettyplease v0.2.37
+   Compiling fnv v1.0.7
+   Compiling darling_core v0.20.11
+   Compiling wasmparser v0.116.1
+   Compiling base64 v0.22.1
+   Compiling byteorder v1.5.0
+   Compiling heapless v0.8.0
+   Compiling darling_macro v0.20.11
+   Compiling hash32 v0.3.1
+   Compiling stellar-strkey v0.0.16
+   Compiling crate-git-revision v0.0.9
+   Compiling num-integer v0.1.47
+   Compiling rustc_version v0.4.1
+   Compiling static_assertions v1.1.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling soroban-sdk v27.0.6
+   Compiling num-bigint v0.4.8
+   Compiling darling v0.20.11
+   Compiling macro-string v0.1.4
+   Compiling heck v0.5.0
+   Compiling visibility v0.1.1
+   Compiling bytes-lit v0.0.6
+   Compiling soroban-spec v27.0.6
+   Compiling soroban-spec-rust v27.0.6
+   Compiling soroban-env-macros v27.0.1
+   Compiling soroban-env-guest v27.0.1
+   Compiling soroban-sdk-macros v27.0.6
+   Compiling test-protection-pool v0.1.0 (/work/contracts/test-protection-pool)
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> src/lib.rs:110:18
+    |
+110 |     fn pool(env: &Env) -> pool::Client {
+    |                  ^^^^     ^^^^^^^^^^^^ the same lifetime is hidden here
+    |                  |
+    |                  the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+110 |     fn pool(env: &Env) -> pool::Client<'_> {
+    |                                       ++++
+
+warning: `test-protection-pool` (lib) generated 1 warning (run `cargo fix --lib -p test-protection-pool` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 22.22s
+ℹ️  Build Summary:
+    Wasm File: /tmp/tmpglzqxuvrkomet_test-protection-pool/test_protection_pool.wasm (4005 bytes)
+    Wasm Hash: 63cc0fea5ee68aacf9bf189f602ce9f18eff623a8ab4e1bdf88b1c8152ed59f5
+    Wasm Size: 4005 bytes
+    Exported Functions: 4 found
+      • init
+      • test_solvency_invariant
+      • test_stake_accounting_is_exact
+      • test_totals_never_negative
+✅ Build Complete
+
+ℹ️  Loading contract spec from file...
+stellar-shim: renamed 5 input type fields

@@ -395,6 +395,14 @@ Exit code 0 with 300 executed examples. Run 2026-09-01 against Komet
 `a078e296` (v0.1.89), stellar-cli 28.0.0, rustc 1.96.0, target
 `wasm32v1-none`, soroban-sdk 27.0.6.
 
+**The complete, unedited run log is committed to this repository at
+`.komet-evidence/komet-run3-20260901.log`** (80KB) so the result above can be
+checked rather than taken on trust. It records the run start timestamp, the two
+preflight gates (Wasm section IDs and supported spec types), the full toolchain
+versions, every discovered test function, the per-property progress output, and
+the terminating exit code. `Dockerfile.komet` in the repository root rebuilds
+the exact environment that produced it.
+
 `komet prove` (symbolic execution) is a separate, longer run and is not
 claimed here.
 
