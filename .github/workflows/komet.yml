@@ -1,0 +1,157 @@
+# Komet (Runtime Verification) — MANUAL TRIGGER ONLY.
+#
+# Komet is a Soroban fuzzing + symbolic-verification tool built on the
+# K framework. It appears on the SCF Audit Bank intake form's list of accepted
+# security tooling, which is why it is worth establishing whether it runs
+# against this contract.
+#
+# WHY A GITHUB RUNNER RATHER THAN LOCAL OR THE VPS
+#   - The installer is `bash <(curl https://kframework.org/install)` pulling in
+#     Nix and the full K/KWasm toolchain — real unaudited third-party install
+#     surface that should not touch a workstation or a box running production.
+#     A runner is disposable and starts clean.
+#   - Runners are x86_64, which matches what the K toolchain actually ships.
+#     An arm64 laptop result would not generalise.
+#   - The K installer refuses to run as root (its own safety check). The
+#     `runner` user is already non-root, so that is satisfied for free.
+#
+# WHY THIS IS A PROBE, NOT AN ATTEMPT AT RESULTS
+# Komet is not a push-button scanner. Unlike Scout it does not analyse by
+# compiling with lints; it consumes the built WASM and verifies properties
+# that a human writes. So the first question is narrow and cheap:
+#
+#     does the toolchain still install on a clean machine in 2026, and what
+#     does its CLI actually offer?
+#
+# Guessing invocations burns runs. This job installs, records --version and
+# --help verbatim, and only then attempts a build against the contract. What
+# it learns shapes whether writing specs is worth a session.
+#
+# Structural reason for cautious optimism: Scout failed because it compiles
+# the crate itself against `wasm32-unknown-unknown`, which `soroban-sdk` 27
+# rejects. Komet consumes an already-built WASM, and this repo builds cleanly
+# to `wasm32v1-none` — so Scout's specific blocker should not apply. That is a
+# reason to try, not a prediction that it works.
+
+name: Komet probe (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  komet:
+    name: Komet toolchain probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Environment
+        run: |
+          uname -a
+          whoami
+          df -h / | tail -1
+          free -m | head -2
+
+      # ---- Step 1: does the toolchain install at all? ----
+      - name: Install K framework + Komet
+        id: install
+        continue-on-error: true
+        run: |
+          set +e
+          echo "== kframework installer ==" | tee install.log
+          echo "y" | bash <(curl -fsSL https://kframework.org/install) 2>&1 | tee -a install.log
+          echo "installer_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          export PATH="$HOME/.kup/bin:$PATH"
+          echo "$HOME/.kup/bin" >> "$GITHUB_PATH"
+          echo "== kup install komet ==" | tee -a install.log
+          kup install komet 2>&1 | tee -a install.log
+          echo "kup_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      # ---- Step 2: what does the CLI actually offer? ----
+      # Recorded verbatim: this is the information the probe exists to get.
+      - name: Komet version and CLI surface
+        id: cli
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          export PATH="$HOME/.kup/bin:$PATH"
+          command -v komet | tee cli.log
+          echo "== --version ==" | tee -a cli.log
+          komet --version 2>&1 | tee -a cli.log
+          echo "== --help ==" | tee -a cli.log
+          komet --help 2>&1 | tee -a cli.log
+          echo "found=$(command -v komet >/dev/null && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+
+      # ---- Step 3: build the contract WASM Komet would consume ----
+      - name: Build contract WASM
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          rustup target add wasm32v1-none 2>&1 | tail -2
+          cargo install --locked stellar-cli --version 23.1.4 2>&1 | tail -3 || \
+            echo "stellar-cli install failed — falling back to plain cargo build"
+          stellar contract build 2>&1 | tee wasm.log | tail -10
+          ls -la target/wasm32v1-none/release/*.wasm 2>/dev/null | tee -a wasm.log
+
+      # ---- Step 4: attempt a run, whatever the CLI turned out to support ----
+      - name: Attempt Komet against the contract
+        id: run
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          export PATH="$HOME/.kup/bin:$PATH"
+          if ! command -v komet >/dev/null; then
+            echo "komet not installed — nothing to attempt" | tee komet.log
+            exit 0
+          fi
+          cd contracts/protection-pool
+          for sub in build test; do
+            echo "== komet $sub ==" | tee -a ../../komet.log
+            komet "$sub" 2>&1 | tee -a ../../komet.log
+            echo "-- exit ${PIPESTATUS[0]} --" | tee -a ../../komet.log
+          done
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "## Komet probe"
+            echo ""
+            echo "| Stage | Result |"
+            echo "|---|---|"
+            echo "| K installer | \`${{ steps.install.outputs.installer_exit }}\` |"
+            echo "| kup install komet | \`${{ steps.install.outputs.kup_exit }}\` |"
+            echo "| komet on PATH | \`${{ steps.cli.outputs.found }}\` |"
+            echo ""
+            echo "### CLI surface"
+            echo '```'
+            head -60 cli.log 2>/dev/null || echo "(none)"
+            echo '```'
+            echo ""
+            echo "### Attempt against the contract"
+            echo '```'
+            tail -40 komet.log 2>/dev/null || echo "(not attempted)"
+            echo '```'
+            echo ""
+            echo "**This is a probe.** A failure here answers a question rather"
+            echo "than blocking anything: the contract's assurance does not depend"
+            echo "on Komet, and no result from it is being claimed anywhere."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: komet-probe
+          path: |
+            install.log
+            cli.log
+            wasm.log
+            komet.log
+          if-no-files-found: warn
