@@ -620,7 +620,8 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
   is the one call with no prior position to derive a floor from, which makes it
   a deploy-time operational gate rather than a code defect. It is recorded in
   the Tranche 3 threat model alongside the DeFindex vault-configuration gate
-  (`upgradable = false`, `vault_fee = 0`), and
+  (`upgradable = false`, `vault_fee = 1` — the current mainnet factory refuses
+  `0`, see the Tranche 3 deploy plan), and
   `scripts/atomic_pool_vault_deploy.sh` is where it is enforced.
 - **Solodit cross-reference** (Cyfrin's real-world finding database,
   50,000+ findings across 30+ audit firms): searched Access Control,

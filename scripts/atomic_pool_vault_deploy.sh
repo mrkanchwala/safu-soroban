@@ -35,6 +35,26 @@ set -euo pipefail
 : "${VAULT_FEE_RECEIVER:?Set VAULT_FEE_RECEIVER (usually the pool's own treasury address)}"
 : "${DEPLOY_BPS:?Set DEPLOY_BPS (e.g. 500 for 5%; must be <= MAX_DEPLOY_BPS = 8000)}"
 : "${FIRST_DEPOSIT_AMOUNT:?Set FIRST_DEPOSIT_AMOUNT (bounded test deposit, in stroops)}"
+# ADDED 2026-09-10 — the factory call needs these and the old version omitted
+# them entirely (see the Step 1 note below). All are network-specific.
+: "${XLM_SAC:?Set XLM_SAC (native XLM Stellar Asset Contract; derive with: stellar contract id asset --asset native --network \$NETWORK)}"
+: "${BLEND_STRATEGY:?Set BLEND_STRATEGY (DeFindex XLM->Blend strategy contract for this network)}"
+: "${SOROSWAP_ROUTER:?Set SOROSWAP_ROUTER (Soroswap AMM router for this network; VERIFY it exposes swap_exact_tokens_for_tokens before trusting it)}"
+
+# vault_fee is in bps and is PERMANENT at construction — there is no
+# set_vault_fee. 0 is IMPOSSIBLE: the vault constructor traps with
+# UnreachableCodeReached on both testnet and mainnet (proven 2026-09-10 by
+# isolation test: 0 traps, 1/10/50/100 all succeed). Prior records claiming
+# "VaultFee = 0, DeFindex earns nothing" are WRONG. 1 = 0.01%, and DeFindex
+# takes a further cut of it (defindex_protocol_rate, 5000/50% on mainnet).
+# Economically negligible against ~0.05% XLM yield.
+VAULT_FEE="${VAULT_FEE:-1}"
+VAULT_NAME="${VAULT_NAME:-SAFU Protection Vault}"
+VAULT_SYMBOL="${VAULT_SYMBOL:-SAFUXLM}"
+if [ "$VAULT_FEE" = "0" ]; then
+  echo "FATAL: VAULT_FEE=0 is impossible — the vault constructor traps. Use 1." >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # DeFindex build pinning (added 2026-09-01 after reviewing OtterSec's DeFindex
@@ -109,15 +129,32 @@ echo "== Step 1: create_defindex_vault (VaultFee=0, upgradable=false) =="
 # Manager=2, RebalanceManager=3. Manager should be a 2-of-3 multisig, not a
 # single key (matches the 2026-08-20 precedent: vault_mgr1/2/3, thresholds
 # {2,2,2}) — set that up as its own multisig account BEFORE running this.
+# CORRECTED 2026-09-10. The previous version of this call could never have
+# worked and would have failed on the first mainnet attempt:
+#   1. it passed --emergency_manager/--vault_fee_receiver/--manager/
+#      --rebalance_manager as four separate arguments, but the real signature
+#      takes ONE `roles` Map<u32,Address>;
+#   2. it omitted --assets, --soroswap_router and --name_symbol entirely, all
+#      of which are required;
+#   3. it passed --vault_fee 0, which traps.
+# The role INDEX mapping in the comment above was correct and is retained —
+# re-confirmed 2026-09-10 from apps/contracts/vault/src/access.rs AND from
+# DeFindex's own reference deploy script. Index 2 is Manager, the role that
+# controls vault upgrades; getting it wrong hands upgrade authority to the
+# wrong key and nothing complains at deploy time.
+# Live signature (stellar contract info interface, verified on BOTH networks):
+#   create_defindex_vault(roles: Map<u32,Address>, vault_fee: u32,
+#     assets: Vec<AssetStrategySet>, soroswap_router: Address,
+#     name_symbol: Map<String,String>, upgradable: bool) -> Address
 NEW_VAULT_ID=$(unquote "$(stellar contract invoke \
-  --id "$DEFINDEX_FACTORY_ID" --network "$NETWORK" --source "$SOURCE_ACCOUNT" \
+  --id "$DEFINDEX_FACTORY_ID" --network "$NETWORK" --source "$SOURCE_ACCOUNT" --send=yes \
   -- create_defindex_vault \
-  --vault_fee 0 \
-  --upgradable false \
-  --emergency_manager "$VAULT_EMERGENCY_ADDR" \
-  --vault_fee_receiver "$VAULT_FEE_RECEIVER" \
-  --manager "$VAULT_MANAGER_MULTISIG" \
-  --rebalance_manager "$VAULT_REBALANCE_ADDR")")
+  --roles "{\"0\":\"$VAULT_EMERGENCY_ADDR\",\"1\":\"$VAULT_FEE_RECEIVER\",\"2\":\"$VAULT_MANAGER_MULTISIG\",\"3\":\"$VAULT_REBALANCE_ADDR\"}" \
+  --vault_fee "$VAULT_FEE" \
+  --assets "[{\"address\":\"$XLM_SAC\",\"strategies\":[{\"address\":\"$BLEND_STRATEGY\",\"name\":\"XLM Blend Strategy\",\"paused\":false}]}]" \
+  --soroswap_router "$SOROSWAP_ROUTER" \
+  --name_symbol "{\"name\":\"$VAULT_NAME\",\"symbol\":\"$VAULT_SYMBOL\"}" \
+  --upgradable false)")
 echo "New vault: $NEW_VAULT_ID"
 
 # From here on a real vault exists on-chain. Every abort path below must say
