@@ -42,17 +42,27 @@ set -euo pipefail
 : "${SOROSWAP_ROUTER:?Set SOROSWAP_ROUTER (Soroswap AMM router for this network; VERIFY it exposes swap_exact_tokens_for_tokens before trusting it)}"
 
 # vault_fee is in bps and is PERMANENT at construction — there is no
-# set_vault_fee. 0 is IMPOSSIBLE: the vault constructor traps with
-# UnreachableCodeReached on both testnet and mainnet (proven 2026-09-10 by
-# isolation test: 0 traps, 1/10/50/100 all succeed). Prior records claiming
-# "VaultFee = 0, DeFindex earns nothing" are WRONG. 1 = 0.01%, and DeFindex
-# takes a further cut of it (defindex_protocol_rate, 5000/50% on mainnet).
-# Economically negligible against ~0.05% XLM yield.
-VAULT_FEE="${VAULT_FEE:-1}"
-VAULT_NAME="${VAULT_NAME:-SAFU Protection Vault}"
+# set_vault_fee. 0 IS VALID and is the intended value (STRIDE Elevation.3 gate;
+# matches the T2 testnet vault's get_fees() == [0, 2000]).
+#
+# CORRECTED 2026-09-10, second pass. An earlier version of this script hard-
+# failed on VAULT_FEE=0, claiming the mainnet constructor traps on it. That was
+# a CONFOUNDED TEST: the fee was varied while VAULT_NAME stayed at the 21-char
+# "SAFU Protection Vault", which traps at ANY fee. Re-tested one variable at a
+# time against mainnet by simulation: with a <=20 char name, fee 0/1/2/100 all
+# succeed. The real constraint is the name length below.
+VAULT_FEE="${VAULT_FEE:-0}"
+VAULT_NAME="${VAULT_NAME:-SAFU Protection}"
 VAULT_SYMBOL="${VAULT_SYMBOL:-SAFUXLM}"
-if [ "$VAULT_FEE" = "0" ]; then
-  echo "FATAL: VAULT_FEE=0 is impossible — the vault constructor traps. Use 1." >&2
+
+# THE REAL TRAP. A vault name of 21+ characters makes the vault constructor
+# panic with UnreachableCodeReached, and the factory escalates that to a VM
+# trap with no usable message. Boundary found by simulation 2026-09-10:
+# 20 chars OK, 21 chars traps. Fail here rather than at the factory, where the
+# error names nothing.
+if [ "${#VAULT_NAME}" -gt 20 ]; then
+  echo "FATAL: VAULT_NAME is ${#VAULT_NAME} chars; the vault constructor traps above 20." >&2
+  echo "       ('$VAULT_NAME')" >&2
   exit 1
 fi
 
@@ -149,7 +159,8 @@ echo "== Step 1: create_defindex_vault (VaultFee=$VAULT_FEE, upgradable=false) =
 #      takes ONE `roles` Map<u32,Address>;
 #   2. it omitted --assets, --soroswap_router and --name_symbol entirely, all
 #      of which are required;
-#   3. it passed --vault_fee 0, which traps.
+#   3. it passed --vault_fee 0 -- which is actually FINE, see the VAULT_FEE
+#      note above; that claim was a confounded test and is retracted.
 # The role INDEX mapping in the comment above was correct and is retained —
 # re-confirmed 2026-09-10 from apps/contracts/vault/src/access.rs AND from
 # DeFindex's own reference deploy script. Index 2 is Manager, the role that
@@ -159,14 +170,29 @@ echo "== Step 1: create_defindex_vault (VaultFee=$VAULT_FEE, upgradable=false) =
 #   create_defindex_vault(roles: Map<u32,Address>, vault_fee: u32,
 #     assets: Vec<AssetStrategySet>, soroswap_router: Address,
 #     name_symbol: Map<String,String>, upgradable: bool) -> Address
+# ARGS GO VIA FILES, NOT INLINE. stellar-cli 28.0.0 mangles an inline JSON map:
+# it strips the braces and splits on commas, so `--roles '{"0":"G..","1":"G.."}'`
+# arrives as separate `"0":"G.."` tokens and every one fails to parse. The CLI's
+# own error suggests the file form. Verified 2026-09-10: identical JSON that
+# fails inline parses correctly via --<arg>-file-path. Applies to every Map/Vec
+# argument, so all three go through files.
+ARGDIR="$(mktemp -d)"
+trap 'rm -rf "$ARGDIR"' EXIT
+printf '{"0":"%s","1":"%s","2":"%s","3":"%s"}' \
+  "$VAULT_EMERGENCY_ADDR" "$VAULT_FEE_RECEIVER" "$VAULT_MANAGER_MULTISIG" "$VAULT_REBALANCE_ADDR" \
+  > "$ARGDIR/roles.json"
+printf '[{"address":"%s","strategies":[{"address":"%s","name":"XLM Blend Strategy","paused":false}]}]' \
+  "$XLM_SAC" "$BLEND_STRATEGY" > "$ARGDIR/assets.json"
+printf '{"name":"%s","symbol":"%s"}' "$VAULT_NAME" "$VAULT_SYMBOL" > "$ARGDIR/name_symbol.json"
+
 NEW_VAULT_ID=$(unquote "$(stellar contract invoke \
   --id "$DEFINDEX_FACTORY_ID" --network "$NETWORK" --source "$SOURCE_ACCOUNT" --send=yes \
   -- create_defindex_vault \
-  --roles "{\"0\":\"$VAULT_EMERGENCY_ADDR\",\"1\":\"$VAULT_FEE_RECEIVER\",\"2\":\"$VAULT_MANAGER_MULTISIG\",\"3\":\"$VAULT_REBALANCE_ADDR\"}" \
+  --roles-file-path "$ARGDIR/roles.json" \
   --vault_fee "$VAULT_FEE" \
-  --assets "[{\"address\":\"$XLM_SAC\",\"strategies\":[{\"address\":\"$BLEND_STRATEGY\",\"name\":\"XLM Blend Strategy\",\"paused\":false}]}]" \
+  --assets-file-path "$ARGDIR/assets.json" \
   --soroswap_router "$SOROSWAP_ROUTER" \
-  --name_symbol "{\"name\":\"$VAULT_NAME\",\"symbol\":\"$VAULT_SYMBOL\"}" \
+  --name_symbol-file-path "$ARGDIR/name_symbol.json" \
   --upgradable false)")
 echo "New vault: $NEW_VAULT_ID"
 

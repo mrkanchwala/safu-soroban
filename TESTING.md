@@ -620,8 +620,9 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
   is the one call with no prior position to derive a floor from, which makes it
   a deploy-time operational gate rather than a code defect. It is recorded in
   the Tranche 3 threat model alongside the DeFindex vault-configuration gate
-  (`upgradable = false`, `vault_fee = 1` — the current mainnet factory refuses
-  `0`, see the Tranche 3 deploy plan), and
+  (`upgradable = false`, `vault_fee = 0` — the earlier "mainnet refuses 0"
+  note is RETRACTED, it was a confounded test; the real limit is a 20-character
+  vault name. Mainnet vault `CA2LV3YO…` returns `get_fees() == [0, 5000]`), and
   `scripts/atomic_pool_vault_deploy.sh` is where it is enforced.
 - **Solodit cross-reference** (Cyfrin's real-world finding database,
   50,000+ findings across 30+ audit firms): searched Access Control,
