@@ -81,7 +81,20 @@ wasm_hash_of() {
     | tr -d '"' | tr -d '[:space:]'
 }
 
-is_mainnet() { [ "$NETWORK" = "mainnet" ] || [ "$NETWORK" = "pubnet" ] || [ "$NETWORK" = "public" ]; }
+# Decides whether the mainnet-only pins below actually run. Matching by alias
+# NAME alone was a live bug (found 2026-09-10): the working alias here is
+# `safu-mainnet` -- the built-in `mainnet` alias has no RPC configured and every
+# call fails with `error: Invalid URL` -- so is_mainnet() returned false on a
+# real mainnet run and BOTH the factory pin and the vault-WASM pin skipped in
+# silence. The passphrase check is the poka-yoke: any future alias pointing at
+# the public network is caught regardless of what it is called.
+is_mainnet() {
+  case "$NETWORK" in
+    mainnet|pubnet|public|safu-mainnet) return 0 ;;
+  esac
+  local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/stellar/network/${NETWORK}.toml"
+  [ -f "$cfg" ] && grep -q 'Public Global Stellar Network' "$cfg"
+}
 
 # `stellar contract invoke` emits JSON, so an address comes back wrapped in
 # literal double quotes ("CCSS44...") and a None reads as `null`. Every value
@@ -124,7 +137,7 @@ if [ "$CONFIRM" != "yes" ]; then
   exit 1
 fi
 
-echo "== Step 1: create_defindex_vault (VaultFee=0, upgradable=false) =="
+echo "== Step 1: create_defindex_vault (VaultFee=$VAULT_FEE, upgradable=false) =="
 # Role-ID enum, verified 2026-08-20: EmergencyManager=0, VaultFeeReceiver=1,
 # Manager=2, RebalanceManager=3. Manager should be a 2-of-3 multisig, not a
 # single key (matches the 2026-08-20 precedent: vault_mgr1/2/3, thresholds
