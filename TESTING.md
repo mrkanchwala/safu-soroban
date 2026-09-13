@@ -2,11 +2,13 @@
 
 This is the answer to "what did we do to verify this contract" — every
 method applied, why, and what it found. Scope is code-level verification.
-The Tranche 2 code is **live on Stellar testnet** at
-`CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB` carrying real
-activity; the merged Tranche 3 tree is **not deployed anywhere yet** and its
-mainnet deploy follows the SCF-funded audit. See `README.md`. All numbers below
-are reproducible with the commands in each section.
+The Tranche 3 tree is **live on Stellar mainnet** at
+`CB3LZVWKGGWSYHHIE7ILK5CJH2MLUB6SWAU7UK6PMQEP3AESD3DAUBRC`, deployed
+2026-09-10 — the SCF-funded audit is running in parallel rather than gating
+this deploy. Tranche 2 remains live on testnet at
+`CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB` as the historical
+record of what was reviewed and approved at that tranche. See `README.md`.
+All numbers below are reproducible with the commands in each section.
 
 **Last re-measured 2026-09-01** against the merged Tranche 3 tree (WASM
 `2cec7e749d46b96a392be85dd284b8a988261ab7716b2218c7a5f39bbe2162db`): unit tests,
@@ -646,10 +648,14 @@ Verification for this piece rests on §1 (unit tests), §4 (fuzzing), and
 - **No external human audit yet.** Everything above is internal
   (self-run tooling + manual review), which is why Tranche 3 budgets a
   real external audit through the SCF Audit Bank.
-- **The merged Tranche 3 tree is not deployed anywhere.** The Tranche 2 code is
-  live on testnet and has real activity behind it, but no live-network behaviour
-  of the Tranche 3 code (real Stellar RPC timing, real trustline edge cases, real
-  congestion) has been observed — see README's "Known open items."
+- **The Tranche 3 tree is live on mainnet, but payout streaming hasn't
+  completed yet.** Two real claims (real drains, scored by the production
+  scanner, signed by the KMS oracle) have gone through submit → override →
+  cooldown and are `Active`. The 7-day cooldown was not shortened for
+  either, so `claim_stream`'s actual payout has not been observed on
+  mainnet yet — that's the narrower gap that remains, not the absence of a
+  mainnet deployment. See README's "Known open items" and
+  `reviewer-kit-mainnet/` to check or trigger it yourself.
 - **Dependency risk is reviewed, not verified.** SAFU's yield layer deposits into
   a DeFindex vault which routes into Blend. The published audits of both
   (OtterSec, Certora, Code4rena) were reviewed and their findings traced to this

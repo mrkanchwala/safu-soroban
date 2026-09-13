@@ -14,7 +14,10 @@ socialization pool, built for SCF #44 and delivered in three tranches:
 - **Tranche 3** — mainnet. Closes the three operational gaps Tranches 1 and 2
   deliberately left open: an on-chain admission retry queue, permissionless
   bidirectional liquidity rebalancing, and an atomic pool+vault deploy. Code
-  merged 2026-09-01; mainnet deploy follows the SCF-funded audit.
+  merged 2026-09-01; **live on Stellar mainnet since 2026-09-10.** The
+  SCF-funded audit runs in parallel rather than gating this deploy — SAFU
+  applied to the Audit Bank immediately after Tranche 2 was approved and is
+  awaiting a matched auditor.
 
 **Scope note:** this repo is the on-chain `ProtectionPool` contract only.
 SAFU's fraud-detection scanner, the system that decides whether a given
@@ -22,8 +25,10 @@ transaction qualifies as a wallet drain, is a separate, proprietary asset.
 Its code, logic, and signal weights are not included, referenced, or
 reproduced anywhere in this repository.
 
-**Status:** Tranche 3 code merged 2026-09-01; Tranche 2 is the code currently
-live on Stellar testnet. **278 unit tests pass on the merged tree.**
+**Status:** Tranche 3 is **live on Stellar mainnet** (deployed 2026-09-10).
+Tranche 2 remains live on Stellar testnet as the historical record of what
+SCF reviewed and approved at that tranche. **278 unit tests pass on the
+merged tree.**
 
 **The full-workspace mutation regression against the merged Tranche 3 tree has
 run (2026-09-01): 805 mutants — 782 caught, 22 unviable, 1 survivor, zero
@@ -39,19 +44,60 @@ Compiles to WASM via
 `stellar contract build --optimize`, `/audit-chain` +
 `/cso` security passes both PASS (0 CRIT/HIGH/MEDIUM — see §7 of
 `TESTING.md`),
-fuzzed 151,398 runs with zero crashes. **Live contract ID:**
-`CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB` (see
-"Testnet deployment (Tranche 2, current)" below). **Error handling:** every public entrypoint
+fuzzed 151,398 runs with zero crashes. **Live mainnet contract ID:**
+`CB3LZVWKGGWSYHHIE7ILK5CJH2MLUB6SWAU7UK6PMQEP3AESD3DAUBRC` (see
+"Mainnet deployment (Tranche 3, current)" below). **Error handling:** every public entrypoint
 returns `Result<T, PoolError>` via a typed `#[contracterror]` enum
 (`src/error.rs`) rather than raw panics. Converted 2026-07-31, see
 "Error handling" below.
 
-## Testnet deployment (Tranche 2, current)
+## Mainnet deployment (Tranche 3, current)
 
-**This is the live contract.** Deployed and initialized on Stellar testnet
+**This is the live contract.** Deployed and initialized on Stellar mainnet
+2026-09-10, carrying the merged Tranche 3 code — the on-chain admission
+retry queue, permissionless bidirectional rebalancing, and the atomic
+pool+vault deploy — on top of everything Tranches 1 and 2 shipped.
+
+- **Contract ID:** `CB3LZVWKGGWSYHHIE7ILK5CJH2MLUB6SWAU7UK6PMQEP3AESD3DAUBRC`
+  ([Stellar Expert](https://stellar.expert/explorer/public/contract/CB3LZVWKGGWSYHHIE7ILK5CJH2MLUB6SWAU7UK6PMQEP3AESD3DAUBRC))
+- **Upload tx:** [`fd500657cc9c...`](https://stellar.expert/explorer/public/tx/fd500657cc9c0226ce22a9e511b22dad2cd1cd7b61300086a7513dc2e4d0aeb8)
+- **Create tx:** [`591988f6c906...`](https://stellar.expert/explorer/public/tx/591988f6c906ab1f120cc45e9cc2158bc812503c7f80871db6e23d4ab30d2dba)
+- **WASM hash:** `2cec7e749d46b96a392be85dd284b8a988261ab7716b2218c7a5f39bbe2162db`
+  — verified read back directly from the chain, byte-identical to the
+  audited freeze tag `t3-audit-freeze-2026-09-01`.
+- **Yield vault (D2, redeployed for mainnet):** `CA2LV3YOQ5WTQJKWIK6BFWXPNMSPHRG7763T5B4JLMEJLTVNNIK6S5AP`,
+  SAFU's own DeFindex vault, `vault_fee = 0` and `upgradable = false`, both
+  verified on-chain (`get_fees() == [0, 5000]`) before any liquidity was
+  routed through it.
+- **Pool cap:** 40,000 XLM (`400_000_000_000` stroops) — deliberately small
+  for this test pool; see "Known open items" below.
+- **XLM asset:** native mainnet SAC
+  `CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA`
+- **Oracle:** the same AWS KMS-held Ed25519 key used on testnet — network-
+  agnostic, so no new key was generated for mainnet. Admin, co-signer and
+  treasury are fresh mainnet identities. Public addresses only, no private
+  keys are shared here or anywhere in this repository.
+
+Real activity on this contract: two real claims (real drains, scored by the
+production scanner, signed by the KMS oracle) have gone through submit →
+override → cooldown. Both are `Active`, cooldown running.
+
+### Verify a payout yourself (mainnet)
+
+Same reasoning as the testnet kit below — the 7-day cooldown is real and
+was not shortened for a demo. [`reviewer-kit-mainnet/`](reviewer-kit-mainnet/)
+contains a script and the staker keys to check claim status and trigger a
+real mainnet payout yourself once cooldown clears. See
+[`reviewer-kit-mainnet/README.md`](reviewer-kit-mainnet/README.md).
+
+## Testnet deployment (Tranche 2, historical record)
+
+Deployed and initialized on Stellar testnet
 2026-08-20, carrying the merged Tranche 2 code: on-chain Ed25519 oracle
 verification (D1), the DeFindex yield vault integration (D2), and the audit
-fixes from the combined `/audit-chain` + `/cso` pass.
+fixes from the combined `/audit-chain` + `/cso` pass. Kept live as the record
+of what SCF reviewed and approved at Tranche 2; the mainnet deployment above
+is now the current one.
 
 - **Contract ID:** `CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB`
   ([Stellar Expert](https://stellar.expert/explorer/testnet/contract/CDTXVIA4TSQ6PY76VFD4BBW4R4UMGSE5HTBNAMASAPRYRNV37DBDJJBB))
@@ -368,7 +414,7 @@ pub enum DataKey {
   custom revocation list. (Yield was out of Tranche 1 scope and arrived in
   Tranche 2.)
 
-## Known open items before mainnet
+## Known open items
 
 - **Outflow cap deviates from the SCF #44 submitted grant text**, which
   commits Tranche 1 to a flat "2%/day" payout cap. What's built here is

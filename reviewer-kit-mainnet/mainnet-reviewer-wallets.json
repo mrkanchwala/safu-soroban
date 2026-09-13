@@ -1,0 +1,41 @@
+{
+  "_readme": "MAINNET. These are real, founder-controlled Stellar accounts operating inside SAFU's own capped test pool (pool_cap = 40,000 XLM; max single stake 500 XLM). claim_stream is authorized by the STAKER key (claim.rs claim.wallet.require_auth()); the beneficiary is verified against a hash committed at stake time and is where the payout lands. Beneficiary secret keys are DELIBERATELY NOT included here -- the staker key can trigger a payout but can never redirect where it goes, which is what makes publishing it safe. Do not fund these accounts beyond what SAFU already has staked.",
+  "contract_id": "CB3LZVWKGGWSYHHIE7ILK5CJH2MLUB6SWAU7UK6PMQEP3AESD3DAUBRC",
+  "network": "public",
+  "network_passphrase": "Public Global Stellar Network ; September 2015",
+  "horizon_url": "https://horizon.stellar.org",
+  "soroban_rpc_url": "https://mainnet.sorobanrpc.com/",
+  "claims": [
+    {
+      "label": "claim1",
+      "claim_id": "26c144827718a8dcab47355a992595195864022c44a5201df3c59dad6d1fe14d",
+      "staker_public": "GBMRY66546U7ZKXJCIOLTDARQD5MOSDZIIDKPWSQUFODNI4ZI7VSFMYP",
+      "staker_secret": "SBJNICHQLNB65GG5UWCEF6NL46EEVVW4OUXPRBX5QQXCVGHE6EO7ODIK",
+      "beneficiary_public": "GC63OPVXJRQLZDXIBWFLS6LTM6YESHVTU5DUP3GEMPPM3HHNEXR6XJYC",
+      "stake_xlm": 10,
+      "entitlement_xlm": 50,
+      "cooldown_ends_ledger": 64497372,
+      "vesting_ends_ledger": 65274972,
+      "drain_tx": "6ef3ba2148526239e7bd50958d46eaaeac59ef9936b7fa2596bf59db43845892",
+      "claim_submit_tx": "16be42eea0ab27d0c614aa8982f181dfb97fd476991caa9e7fe6bee4af39c1d2",
+      "override_admin_tx": "c76e66a0e65b7ca8649fd90735da94a4e54fa30caf9bffd1bdee2b861c533a53",
+      "override_cosigner_tx": "35fce86cee94c21a0de68f4d4953f562b82278e62d9ff48217a07c4119978f0f"
+    },
+    {
+      "label": "claim2",
+      "claim_id": "5b4adf4ecc8d4e38e47d055d68beb3b6e888a3ebf0a0802690830e530f18f345",
+      "staker_public": "GANV4HDNC34B7THQB36SF2ZWPOVHLHUJ7BTPYBI3X23DGXTAYTP7U3HW",
+      "staker_secret": "SAKTJICDUM2PJZ7OWKZQREZE3GSOJB23ZBGM74I6B5ZLWBGAMI6IZ7WV",
+      "beneficiary_public": "GCPT3EHCXWW432YTZJGYI7GZTLZOIMIRGZAYJ6Z67FU6PUU5XL2I7HQI",
+      "stake_xlm": 10,
+      "entitlement_xlm": 50,
+      "cooldown_ends_ledger": 64533634,
+      "vesting_ends_ledger": 65311234,
+      "drain_tx": "2d8319819cfbf2fb539075a7ab24576bf29daecc145e68c6cbf1497cf0010bfc",
+      "claim_submit_tx": "1cdc80feda1008e682b0a54c0aaca1186d7a9d5f59f93b74458d1ef0cbf74c22",
+      "release_tx": "f54c66d82bcf7b1d16645a379512fb3a473e5530a29e69d87d072e2c75d1c5dc",
+      "override_admin_tx": "93136f2aaf242fba29f10cada3ae45e7ae7f35334f425bb036101ca0be0fd8de",
+      "override_cosigner_tx": "ee2e90e57d249010fa884fb19b5e8204d8d2ce3228094ea7aec85830ab0929ab"
+    }
+  ]
+}
