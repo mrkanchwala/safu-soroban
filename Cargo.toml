@@ -23,7 +23,7 @@ license = "Apache-2.0"
 # Verified 2026-07-14 via `cargo check`: crates.io's actual latest is v27.0.0 (v22.0.0
 # placeholder resolved to a real but 5-major-version-old v22.0.11 and pulled a stale API
 # — pinning current so the code matches the SDK docs this was built against).
-soroban-sdk = "27.0.0"
+soroban-sdk = "29.0.1"
 
 [profile.release]
 opt-level = "z"
